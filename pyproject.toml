@@ -1,0 +1,16 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "wake"
+version = "0.1.0"
+description = "Nightly journals of what your AI agents did, written to a git-tracked vault"
+requires-python = ">=3.11"
+dependencies = ['tzdata; sys_platform == "win32"']
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+wake = ["prompts/*.md"]
