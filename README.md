@@ -1,6 +1,6 @@
-# wake
+# Wake
 
-A nightly journal of what your AI agents did. Each night, wake reads an agent's conversations from the day before, has a model write a short note about them, and files the note in a git-tracked vault (an Obsidian vault works well). One note per agent per day. Days with no conversations get no note.
+A nightly journal of what your AI agents did. Each night, Wake reads an agent's conversations from the day before, has a model write a short note about them, and files the note in a git-tracked vault (an Obsidian vault works well). One note per agent per day. Days with no conversations get no note.
 
 It is built for two agents today: [Hermes](https://github.com/NousResearch/hermes-agent) and [Claude Code](https://claude.com/claude-code). Adding another is one small adapter (see [docs/DESIGN.md](docs/DESIGN.md)).
 
