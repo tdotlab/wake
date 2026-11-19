@@ -67,7 +67,7 @@ python -m venv .venv
 .venv/bin/pip install -e .          # Windows: .venv\Scripts\pip
 ```
 
-Pick the vault (a git clone where notes will appear under `journal/<agent>/`) and your time zone. These are environment variables so scheduled jobs see them too:
+Pick the vault (a git clone where notes will appear under `journal/<agent>/YYYY-MM/`, one folder per month) and your time zone. These are environment variables so scheduled jobs see them too:
 
 | Variable | Meaning | Default |
 |---|---|---|

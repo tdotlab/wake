@@ -238,7 +238,7 @@ class RunnerTests(unittest.TestCase):
         note = (self.state / f'{DAY}.md').read_text(encoding='utf-8')
         self.assertIn('agent: claude-code\nprojects: ["Proj"]\n', note)
         self.assertIn(f'- `{ref(self.t, self.u)}` | owner | Proj |', note)
-        self.assertTrue((Path(self.td.name) / 'vault' / 'journal' / 'claude-code' / f'{DAY}.md').is_file())
+        self.assertTrue((Path(self.td.name) / 'vault' / 'journal' / 'claude-code' / DAY[:7] / f'{DAY}.md').is_file())
 
     def test_a_day_with_no_conversations_writes_no_note_and_never_calls_the_model(self):
         def never(prompt, cwd):
@@ -251,7 +251,7 @@ class RunnerTests(unittest.TestCase):
                                           vault=Path(self.td.name) / 'no-vault', log=logs.append))
             self.assertEqual(self.journal.published, [], logs)
         self.assertEqual(list(self.state.glob('*.md')), [])
-        self.assertEqual(list(vault_dir.glob('*.md')) if vault_dir.exists() else [], [])
+        self.assertEqual(list(vault_dir.rglob('*.md')) if vault_dir.exists() else [], [])
         self.assertIn('2026-10-21  no conversations, no note', self.journal.status(today='2026-10-22'))
 
     def test_a_model_that_never_fixes_its_draft_leaves_the_day_pending(self):

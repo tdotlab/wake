@@ -111,6 +111,17 @@ class HermesJournalTests(unittest.TestCase):
         self.assertIn('| owner | telegram |', text)
         self.assertNotIn('refs', task)
 
+    def test_the_vault_copy_goes_in_a_month_folder_and_replaces_a_flat_copy(self):
+        c = make_db(self.db)
+        add(c, 1, 's1', 'user', 'A fixture decision', self.start + 5)
+        c.close()
+        self.vault.mkdir(parents=True)
+        (self.vault / '2026-10-22.md').write_text('stale flat copy', encoding='utf-8')
+        result = self.write_day()
+        self.assertEqual(result['vault_path'], str(self.vault / '2026-10' / '2026-10-22.md'))
+        self.assertTrue((self.vault / '2026-10' / '2026-10-22.md').is_file())
+        self.assertFalse((self.vault / '2026-10-22.md').exists(), 'the old flat copy is replaced, not duplicated')
+
     def test_the_mobile_app_is_t_but_injected_system_turns_are_not(self):
         c = make_db(self.db, [('app', 'gui'), ('room', 'bot_room')])
         add(c, 1, 'app', 'user', 'Ship it', self.start + 1)
@@ -133,7 +144,7 @@ class HermesJournalTests(unittest.TestCase):
         line = [x for x in evidence.splitlines() if x.startswith('- `s:s1/m:1`')][0]
         self.assertIn('| owner | telegram | 00:00 | A fixture decision', line)
         self.assertLessEqual(len(line.split(' | ', 4)[4]), core.EXCERPT_LIMIT)
-        self.assertEqual((self.vault / '2026-10-22.md').read_text(encoding='utf-8'), text)
+        self.assertEqual((self.vault / '2026-10' / '2026-10-22.md').read_text(encoding='utf-8'), text)
         self.assertFalse((self.journal_dir / '.staging' / '2026-10-22').exists(), 'staging is removed after commit')
         self.assertIsNone(self.journal().prepare(today='2026-10-23'))
         c.close()
@@ -178,8 +189,8 @@ class HermesJournalTests(unittest.TestCase):
         j = self.journal()
         task = j.prepare(today='2026-10-24')
         self.assertEqual(task['day'], '2026-10-23', "the empty 22nd must not take the night's one LLM slot")
-        for folder in (self.journal_dir, self.vault):
-            self.assertFalse((folder / '2026-10-22.md').exists(), 'an empty day writes no file anywhere')
+        for path in (self.journal_dir / '2026-10-22.md', self.vault / '2026-10' / '2026-10-22.md'):
+            self.assertFalse(path.exists(), 'an empty day writes no file anywhere')
         self.assertFalse((self.journal_dir / '.meta' / '2026-10-22.json').exists())
         self.assertEqual(j.published, [], 'nothing published, so nothing to sync')
         state = json.loads((self.journal_dir / '.state.json').read_text())
@@ -194,7 +205,7 @@ class HermesJournalTests(unittest.TestCase):
             self.assertIsNone(j.prepare(today=today))
             self.assertEqual(j.published, [])
         self.assertEqual(list(self.journal_dir.glob('*.md')), [])
-        self.assertEqual(list(self.vault.glob('*.md')) if self.vault.exists() else [], [])
+        self.assertEqual(list(self.vault.rglob('*.md')) if self.vault.exists() else [], [])
         status = self.journal().status(today='2026-10-25')
         self.assertIn('2026-10-22  no conversations, no note', status)
         self.assertNotIn('pending', status)
@@ -210,7 +221,7 @@ class HermesJournalTests(unittest.TestCase):
         self.assertEqual(task['day'], '2026-10-22')
         Path(task['draft_path']).write_text(draft_for('2026-10-22', ['s:s1/m:1']), encoding='utf-8')
         j.commit('2026-10-22', today='2026-10-24')
-        self.assertTrue((self.vault / '2026-10-22.md').is_file())
+        self.assertTrue((self.vault / '2026-10' / '2026-10-22.md').is_file())
         state = json.loads((self.journal_dir / '.state.json').read_text())
         self.assertNotIn('2026-10-22', state['empty'])
 
@@ -227,7 +238,7 @@ class HermesJournalTests(unittest.TestCase):
             json.dumps({'start_day': '2026-10-22', 'days': {'2026-10-22': fingerprint}}))
         j = self.journal()
         self.assertEqual(j.rebuild_evidence(today='2026-10-24'), [], 'the evidence backfill skips empty notes')
-        self.assertFalse(self.vault.exists() and list(self.vault.glob('*.md')))
+        self.assertFalse(self.vault.exists() and list(self.vault.rglob('*.md')))
         self.assertIsNone(j.prepare(today='2026-10-24'))
         self.assertFalse((self.journal_dir / '2026-10-22.md').exists())
         self.assertFalse((self.journal_dir / '.meta' / '2026-10-22.json').exists())
@@ -346,7 +357,7 @@ class HermesJournalTests(unittest.TestCase):
         self.assertIn('- `s:sub/m:2` | other | subagent |', new)
         self.assertEqual(j.rebuild_evidence(today='2026-10-31'), [('2026-10-22', 2)])
         self.assertEqual((self.journal_dir / '2026-10-22.md').read_text(encoding='utf-8'), new, 'idempotent')
-        self.assertEqual((self.vault / '2026-10-22.md').read_text(encoding='utf-8'), new)
+        self.assertEqual((self.vault / '2026-10' / '2026-10-22.md').read_text(encoding='utf-8'), new)
 
     def test_cli_gates_the_agent_when_there_is_no_work(self):
         make_db(self.db).close()

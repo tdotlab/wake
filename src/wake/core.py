@@ -358,7 +358,7 @@ class Journal:
             result = {'path': str(final), 'day': day, 'source_messages': manifest['message_count'],
                       'evidence_refs': count, 'fingerprint': manifest['fingerprint']}
             if self.vault_dir:
-                result['vault_path'] = str(self.vault_dir / f'{day}.md')
+                result['vault_path'] = str(self.vault_path(day))
             return result
 
     def validate_draft(self, text, day, valid_refs, message_count):
@@ -429,9 +429,15 @@ class Journal:
         self.published.append(day)
         return final
 
+    def vault_path(self, day):
+        """Published notes sit in one folder per month (journal/hermes/2026-11/2026-11-18.md), so no folder
+        ever holds more than a month of notes."""
+        return self.vault_dir / day[:7] / f'{day}.md'
+
     def copy_to_vault(self, day, text):
         if self.vault_dir:
-            atomic_write(self.vault_dir / f'{day}.md', text)
+            atomic_write(self.vault_path(day), text)
+            (self.vault_dir / f'{day}.md').unlink(missing_ok=True)  # a flat copy from before month folders
 
     def frontmatter(self, m, written_by, generated, created, updated, evidence_refs):
         day = m['day']

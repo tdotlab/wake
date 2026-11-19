@@ -9,7 +9,7 @@ Every night, turn what you did with your agents into notes that people and agent
 ```
 agent transcripts                       model                         vault
 (Hermes state.db,         source        (writes one draft,            (git clone)
- Claude Code .jsonl)  ->  adapter  ->   in a staging folder)  ->  validate + Evidence  ->  journal/<agent>/DATE.md
+ Claude Code .jsonl)  ->  adapter  ->   in a staging folder)  ->  validate + Evidence  ->  journal/<agent>/YYYY-MM/DATE.md
                           (no model)                              (script)                         |
                                                                                            git pull --rebase, commit, push
 ```
