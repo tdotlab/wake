@@ -43,6 +43,24 @@ class GitSyncTests(unittest.TestCase):
         self.assertTrue(sync(self.vault, 'journal: again')[0])  # nothing new is fine
         self.assertEqual(git(self.remote, 'rev-list', '--count', 'main').strip(), '2')
 
+    def test_stash_conflict_after_pull_is_reported_not_committed(self):
+        root = Path(self.tmp.name)
+        git(root, 'clone', 'remote.git', 'other')
+        (root / 'other' / 'README.md').write_text('upstream edit', encoding='utf-8')
+        git(root / 'other', 'commit', '-am', 'upstream')
+        git(root / 'other', 'push')
+        (self.vault / 'README.md').write_text('local edit', encoding='utf-8')
+        (self.vault / 'journal').mkdir()
+        (self.vault / 'journal' / '2026-01-02.md').write_text('# note', encoding='utf-8')
+        head = git(self.vault, 'rev-parse', 'HEAD')
+        ok, output = sync(self.vault, 'journal: test')
+        self.assertFalse(ok)
+        self.assertIn('Unresolved conflicts', output)
+        self.assertIn('README.md', output)
+        self.assertEqual(git(self.vault, 'log', '--format=%s', '-1').strip(), 'upstream')
+        self.assertNotEqual(git(self.vault, 'rev-parse', 'HEAD'), head)  # pulled, but nothing new committed on top
+        self.assertEqual(git(self.remote, 'rev-list', '--count', 'main').strip(), '2')
+
     def test_a_folder_that_is_not_a_clone_fails_quietly(self):
         ok, output = sync(Path(self.tmp.name) / 'nowhere')
         self.assertFalse(ok)

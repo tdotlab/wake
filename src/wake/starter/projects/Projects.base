@@ -1,0 +1,41 @@
+filters:
+  and:
+    - file.inFolder("projects")
+    - file.ext == "md"
+formulas:
+  days_since_update: if(updated, (today() - date(updated)).days, "")
+properties:
+  status:
+    displayName: Status
+  formula.days_since_update:
+    displayName: Days since update
+  repo:
+    displayName: Repo
+views:
+  - type: table
+    name: Active
+    filters:
+      and:
+        - status == "active"
+    order:
+      - file.name
+      - status
+      - updated
+      - formula.days_since_update
+      - repo
+  - type: table
+    name: All by status
+    groupBy:
+      property: status
+      direction: ASC
+    order:
+      - file.name
+      - status
+      - updated
+      - repo
+  - type: cards
+    name: Cards
+    order:
+      - file.name
+      - status
+      - updated

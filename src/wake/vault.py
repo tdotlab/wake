@@ -45,6 +45,13 @@ def sync_once(vault, message):
         if code != 0:
             git(vault, 'rebase', '--abort')
             return False, '\n'.join(log)
+        # --autostash can exit 0 while its pop left conflicts behind; never commit those markers.
+        unmerged = git(vault, 'ls-files', '--unmerged')[1]
+        if unmerged:
+            paths = sorted({line.split('\t', 1)[-1] for line in unmerged.splitlines()})
+            log.append('Unresolved conflicts after pull (stashed local edits clashed with upstream): '
+                       + ', '.join(paths) + '. Resolve them in the vault, then sync again.')
+            return False, '\n'.join(log)
     git(vault, 'add', '-A', '--', 'journal')
     if git(vault, 'diff', '--cached', '--quiet')[0] != 0:
         code, out = git(vault, 'commit', '-m', message or 'wake: journal update')

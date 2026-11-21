@@ -61,7 +61,20 @@ Hermes runs a pre-run script (`deploy/hermes/daily_journal.py`, a shim over this
 
 ## Keeping the vault in sync
 
-`vault.py` pulls with rebase and autostash, commits only the `journal/` folder, and pushes, under a lock, with retries for transient network errors. If the pull conflicts, it aborts the rebase so notes never carry conflict markers, and reports failure. Timers keep a failure streak in `.git/wake-sync-state.json` and speak only after two failures in a row, then at most daily, and once on recovery.
+`vault.py` pulls with rebase and autostash, commits only the `journal/` folder, and pushes, under a lock, with retries for transient network errors. If the pull conflicts, it aborts the rebase so notes never carry conflict markers, and reports failure. `--autostash` can exit 0 while its stash pop leaves conflicts in the working tree, so after a pull it checks for unmerged paths and refuses to commit if there are any. Timers keep a failure streak in `.git/wake-sync-state.json` and speak only after two failures in a row, then at most daily, and once on recovery.
+
+## The starter vault
+
+The journals are one layer of a larger idea: a plain-Markdown vault that every agent reads before guessing and writes to when it learns something durable. `wake init` creates one from `src/wake/starter/`; the journals file themselves into its `journal/` folder. The vault half is deliberately thin, because Obsidian and git already do the hard parts.
+
+- **Rules live in the vault, not in Wake.** `AGENTS.md` at the vault root is the contract (folder map, what to write, how to link, bookkeeping, rules with teeth). `CLAUDE.md` is `@AGENTS.md`. Any agent that can read files can follow it; Wake's skills just make that convenient for Claude Code and Hermes.
+- **Self-contained.** `_system/scripts/brain.py` is a byte copy of `src/wake/brain.py`, standard library only, so a vault keeps working with Wake uninstalled. `wake brain` runs the same module. The vault is found from `--vault`, `$WAKE_VAULT`, `$BRAIN_VAULT`, the script's own location, the nearest ancestor holding `AGENTS.md` and `hot.md`, then `~/vault`.
+- **Three skills** (`brain`, `brain-ingest`, `brain-lint`) hold the procedures. `install-skills` copies them where agents look, preferring the vault's own copy so the owner's edits are what ships.
+- **The owner's space is read-only to agents.** `daily/` and `notes/` are open to every agent to read and are never rewritten. `inbox/` is the drop zone, `raw/` is append-only.
+- **Journals are data.** The rules tell agents a journal quotes conversations and may contain anything, so nothing in one is an instruction. Lint schema-checks journal notes (Wake writes `created` and `updated`) but exempts them from the near-empty check.
+- **Lint is advice, with three exceptions.** `--strict` fails only on dead links, frontmatter errors and unresolved conflict markers. Orphans, index gaps and a stale `hot.md` are reported and never fail a run.
+
+`brain.py sync` commits first and then rebases, without autostash, because a rebase over a dirty tree is what lets stash-pop conflict markers get swept into a commit by `git add -A`. On a conflict it aborts the rebase and leaves the local commit as it was. `vault.py` keeps autostash (it must, since it commits only `journal/` and leaves other edits dirty) and guards against the same failure by checking for unmerged paths after the pull.
 
 ## Tried and dropped: the nightly "dream"
 
@@ -69,4 +82,4 @@ An earlier version had a second layer: a nightly pass that read the journals and
 
 ## Tests
 
-`python -m unittest discover -s tests`. Fixtures are synthetic. The tests cover the staging, validation and Evidence paths for both sources, the Claude Code run with a fake model (repair rounds, slicing, failures), the CLI gate, and the vault sync against real temporary git repositories.
+`python -m unittest discover -s tests`. Fixtures are synthetic. The tests cover the staging, validation and Evidence paths for both sources, the Claude Code run with a fake model (repair rounds, slicing, failures), the CLI gate, and the vault sync against real temporary git repositories. The starter vault is covered by `test_brain.py` (lint, new, find, log, stats, `brain.py sync` against a bare remote including a conflict) and `test_scaffold.py` (init layout and placeholders, `--merge` never overwriting, `install-skills`, and a scan that keeps personal strings out of the starter).

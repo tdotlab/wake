@@ -1,0 +1,12 @@
+{
+  "attachmentFolderPath": "raw/assets",
+  "newFileLocation": "folder",
+  "newFileFolderPath": "inbox",
+  "newLinkFormat": "shortest",
+  "useMarkdownLinks": false,
+  "alwaysUpdateLinks": true,
+  "propertiesInDocument": "visible",
+  "userIgnoreFilters": [
+    "_system/"
+  ]
+}

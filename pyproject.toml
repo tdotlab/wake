@@ -4,13 +4,16 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "wake"
-version = "0.1.0"
-description = "Nightly journals of what your AI agents did, written to a git-tracked vault"
+version = "0.2.0"
+description = "A starter second-brain vault for AI agents (Obsidian + Markdown + git), with nightly journals of what your agents did"
 requires-python = ">=3.11"
 dependencies = ['tzdata; sys_platform == "win32"']
+
+[project.scripts]
+wake = "wake.cli:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
 
 [tool.setuptools.package-data]
-wake = ["prompts/*.md"]
+wake = ["prompts/*.md", "starter/**/*"]

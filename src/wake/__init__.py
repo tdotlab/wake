@@ -1,2 +1,2 @@
-"""Wake: nightly journals of what your AI agents did, written to a vault."""
-__version__ = "0.1.0"
+"""Wake: a starter second-brain vault for AI agents, plus nightly journals of what they did."""
+__version__ = "0.2.0"

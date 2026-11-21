@@ -1,0 +1,48 @@
+filters:
+  and:
+    - file.inFolder("wiki")
+    - 'file.ext == "md"'
+
+properties:
+  type:
+    displayName: Type
+  kind:
+    displayName: Kind
+  status:
+    displayName: Status
+
+views:
+  - type: table
+    name: "Recently updated"
+    limit: 20
+    order:
+      - file.name
+      - type
+      - status
+      - updated
+      - file.mtime
+  - type: table
+    name: "Entities"
+    filters:
+      and:
+        - 'type == "entity"'
+    groupBy:
+      property: kind
+      direction: ASC
+    order:
+      - file.name
+      - kind
+      - status
+      - updated
+  - type: table
+    name: "Concepts, sources, answers"
+    filters:
+      and:
+        - 'type != "entity"'
+    groupBy:
+      property: type
+      direction: ASC
+    order:
+      - file.name
+      - status
+      - updated
