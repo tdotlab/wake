@@ -38,6 +38,8 @@ Every source provides, per message: `ref` (a citation id unique within the day),
 
 **Claude Code** (`sources/claude_code.py`) reads `~/.claude/projects/*/*.jsonl`. It keeps the owner's typed messages (records whose origin kind is `human`, plus slash commands), Claude's prose, and one line per tool call (tool name and command or path, no output). It throws away thinking, tool output and compaction summaries. Sidechains and subagents, headless runs (including the journal's own `claude -p` runs) and sessions where the owner never typed are excluded. A forked or resumed session repeats its parent's records, so the earliest session to hold a uuid owns it. Refs look like `c:<session8>/u:<uuid8>`.
 
+**Where each agent's instructions live.** They differ because the two agents are driven differently. Wake runs Claude Code itself (`claude -p`), so its instructions are a prompt file the runner loads: `src/wake/prompts/claude_code_journal.md`. Hermes runs its own agent from its own cron, so its instructions are a Hermes skill that gets deployed onto the Hermes machine: `skills/hermes-daily-journal/SKILL.md`. The two share the validator, so they describe the same note format; keep them in step when the format changes. A third agent gets whichever of the two shapes matches how it is run.
+
 To add an agent, write a source class with `agent`, `ref_re`, `ref_hint`, a method that returns one day's messages, and the frontmatter hooks the existing two use, then give it a prompt or skill and a CLI entry. Read the two existing adapters; they are short.
 
 ## The Claude Code run
