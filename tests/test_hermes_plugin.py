@@ -31,6 +31,12 @@ class PluginTests(unittest.TestCase):
         tty.start()
         self.addCleanup(tty.stop)
 
+    def test_manifest_identity_namespaces_skill(self):
+        import yaml
+        manifest = yaml.safe_load((PLUGIN / 'plugin.yaml').read_text())
+        self.assertEqual(manifest['name'], 'wake-notes')
+        self.assertEqual(load_plugin().JOB_SKILL, 'wake-notes:journal')
+
     def test_missing_timezone_data_reports_install_hint(self):
         from zoneinfo import ZoneInfoNotFoundError
         mod = load_plugin()
@@ -117,7 +123,7 @@ class PluginTests(unittest.TestCase):
             def register_skill(self, name, path, description='', frontmatter=None):
                 skills.append((name, path))
         load_plugin().register(Context())
-        self.assertEqual([c['name'] for c in calls], ['wake'])
+        self.assertEqual([c['name'] for c in calls], ['wake-notes'])
         self.assertEqual([name for name, _ in skills], ['journal'])
 
     def test_setup_decline_everything_is_read_only(self):
@@ -244,7 +250,7 @@ class SchedulingTests(unittest.TestCase):
             job = jobs[0]
             self.assertEqual(job['name'], 'Wake nightly journal')
             self.assertEqual(job['script'], 'wake_plugin_journal.py')
-            self.assertEqual(job['skills'], ['wake:journal'])
+            self.assertEqual(job['skills'], ['wake-notes:journal'])
             self.assertEqual(job['deliver'], 'local')
             self.assertEqual(job['schedule']['expr'], '30 0 * * *')
             self.assertTrue(job['enabled'])
@@ -362,7 +368,7 @@ class SchedulingTests(unittest.TestCase):
             jobs = self._jobs()
             self.assertEqual(len(jobs), 1)
             self.assertEqual(jobs[0]['id'], existing['id'])
-            self.assertIn('wake:journal', jobs[0]['skills'])
+            self.assertIn('wake-notes:journal', jobs[0]['skills'])
             self.assertNotEqual(jobs[0]['prompt'], 'old prompt')
             self.assertEqual(jobs[0]['schedule']['expr'], '15 5 * * *')
 
@@ -388,6 +394,29 @@ class SchedulingTests(unittest.TestCase):
                 mod.unschedule()
             self.assertIn(job['id'], {j['id'] for j in self._jobs()})
 
+    def test_setup_refuses_saved_id_of_foreign_job(self):
+        mod = load_plugin()
+        from cron.jobs import create_job
+        with tempfile.TemporaryDirectory() as tmp, patch.dict('os.environ', {'HOME': tmp, 'HERMES_HOME': tmp + '/profile'}):
+            home = Path(tmp) / 'profile'
+            foreign = create_job('foreign', '0 1 * * *', name='Foreign', script='other.py')
+            mod._write_config({'journal': {'job_id': foreign['id']}})
+            code, out = self._run_setup(mod, home, ['', '', '', '', '', '', '', '', ''])
+            self.assertNotEqual(code, 0)
+            self.assertIn('different job', out)
+            self.assertEqual(self._jobs()[0]['prompt'], 'foreign')
+            self.assertFalse((home / 'scripts/wake_plugin_journal.py').exists())
+
+    def test_unschedule_refuses_saved_id_of_foreign_job(self):
+        mod = load_plugin()
+        from cron.jobs import create_job
+        with tempfile.TemporaryDirectory() as tmp, patch.dict('os.environ', {'HOME': tmp, 'HERMES_HOME': tmp + '/profile'}):
+            foreign = create_job('foreign', '0 1 * * *', name='Foreign', script='other.py')
+            mod._write_config({'journal': {'job_id': foreign['id']}})
+            with contextlib.redirect_stdout(io.StringIO()):
+                mod.unschedule()
+            self.assertIn(foreign['id'], {job['id'] for job in self._jobs()})
+
     def test_unschedule_removes_only_the_wake_job(self):
         import argparse
         mod = load_plugin()
@@ -406,6 +435,21 @@ class SchedulingTests(unittest.TestCase):
             ids = {job['id'] for job in self._jobs()}
             self.assertNotIn(wake['id'], ids)
             self.assertIn(other['id'], ids)
+
+    def test_generated_script_ignores_foreign_wake_plugin(self):
+        import runpy
+        mod = load_plugin()
+        with tempfile.TemporaryDirectory() as tmp, patch.dict('os.environ', {'HOME': tmp, 'HERMES_HOME': tmp + '/profile'}, clear=True):
+            home = Path(tmp) / 'profile'
+            foreign = home / 'plugins/wake/vendor/wake'
+            foreign.mkdir(parents=True)
+            (foreign / '__init__.py').write_text('# unrelated')
+            installed = home / 'plugins/wake-notes/vendor/wake'
+            installed.mkdir(parents=True)
+            (installed / '__init__.py').write_text('# Wake notes')
+            script = mod.write_prerun_script()
+            vendor = runpy.run_path(str(script))['_plugin_vendor']()
+            self.assertEqual(vendor, installed.parent)
 
     def test_generated_script_gates_empty_day_then_commits_staged_draft(self):
         mod = load_plugin()
@@ -446,6 +490,16 @@ class SchedulingTests(unittest.TestCase):
             self.assertTrue(note.is_file())
             self.assertEqual((vault / 'journal/hermes' / day[:7] / f'{day}.md').read_bytes(), note.read_bytes())
 
+    def test_modified_generated_script_is_not_overwritten(self):
+        mod = load_plugin()
+        with tempfile.TemporaryDirectory() as tmp, patch.dict('os.environ', {'HOME': tmp, 'HERMES_HOME': tmp + '/profile'}):
+            target = mod.write_prerun_script()
+            changed = target.read_text() + '\n# user customization\n'
+            target.write_text(changed)
+            with self.assertRaises(FileExistsError):
+                mod.write_prerun_script()
+            self.assertEqual(target.read_text(), changed)
+
     def test_existing_script_with_different_content_is_not_overwritten(self):
         mod = load_plugin()
         with tempfile.TemporaryDirectory() as tmp, patch.dict('os.environ', {'HOME': tmp, 'HERMES_HOME': tmp + '/profile'}):
@@ -457,8 +511,10 @@ class SchedulingTests(unittest.TestCase):
                 mod.write_prerun_script()
             self.assertEqual(target.read_text(), 'user script\n')
             target.write_text('"""Wake nightly journal pre-run script (generated by `hermes wake setup`)."""\nold\n')
-            self.assertEqual(mod.write_prerun_script(), target)
-            self.assertIn('FALLBACK_PLUGIN', target.read_text())
+            legacy = target.read_text()
+            with self.assertRaises(FileExistsError):
+                mod.write_prerun_script()
+            self.assertEqual(target.read_text(), legacy)
 
     def test_readme_no_longer_claims_model_journal_or_scheduling_are_unavailable(self):
         text = (PLUGIN / 'README.md').read_text()
@@ -597,14 +653,14 @@ class RealHermesCLITests(unittest.TestCase):
         self.addCleanup(self.tmp.cleanup)
         self.home = Path(self.tmp.name)
         (self.home / 'plugins').mkdir()
-        self.plugin = self.home / 'plugins/wake'
+        self.plugin = self.home / 'plugins/wake-notes'
         shutil.copytree(PLUGIN, self.plugin, ignore=shutil.ignore_patterns('__pycache__', '*.pyc'))
-        (self.home / 'config.yaml').write_text('plugins:\n  enabled:\n    - wake\n')
+        (self.home / 'config.yaml').write_text('plugins:\n  enabled:\n    - wake-notes\n')
         self.env = {key: os.environ[key] for key in ('PATH', 'HERMES_SITE') if key in os.environ}
         self.env.update(HOME=str(self.home), HERMES_HOME=str(self.home), PYTHONDONTWRITEBYTECODE='1')
 
     def test_setup_silent_open_pipe_exits_without_writes(self):
-        proc = subprocess.Popen(['hermes', 'wake', 'setup'], stdin=subprocess.PIPE,
+        proc = subprocess.Popen(['hermes', 'wake-notes', 'setup'], stdin=subprocess.PIPE,
                                 stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=self.env)
         try:
             code = proc.wait(timeout=120)  # stdin remains open and silent
@@ -625,7 +681,7 @@ class RealHermesCLITests(unittest.TestCase):
         master, slave = pty.openpty()
         proc = None
         try:
-            proc = subprocess.Popen(['hermes', 'wake', 'setup'], stdin=slave,
+            proc = subprocess.Popen(['hermes', 'wake-notes', 'setup'], stdin=slave,
                                     stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=self.env)
             os.close(slave)
             slave = None
@@ -635,7 +691,7 @@ class RealHermesCLITests(unittest.TestCase):
             self.assertIn(b'No journal job created', out)
             self.assertFalse((self.home / 'wake').exists())
             # Exercise the isolated Wake subprocess from the real CLI too.
-            help_result = subprocess.run(['hermes', 'wake', 'journal', 'status', '--journal', str(self.home / 'journal')],
+            help_result = subprocess.run(['hermes', 'wake-notes', 'journal', 'status', '--journal', str(self.home / 'journal')],
                                          env=self.env, capture_output=True, timeout=120)
             self.assertEqual(help_result.returncode, 0, help_result.stderr)
             self.assertEqual(list(self.plugin.rglob('*.pyc')), [])
@@ -653,7 +709,7 @@ class RealHermesCLITests(unittest.TestCase):
         master, slave = pty.openpty()
         proc = None
         try:
-            proc = subprocess.Popen(['hermes', 'wake', 'setup'], stdin=slave,
+            proc = subprocess.Popen(['hermes', 'wake-notes', 'setup'], stdin=slave,
                                     stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=self.env)
             os.close(slave)
             slave = None
@@ -672,7 +728,7 @@ class RealHermesCLITests(unittest.TestCase):
         self.assertEqual(len(jobs), 1)
         job = jobs[0]
         self.assertEqual(job['script'], 'wake_plugin_journal.py')
-        self.assertEqual(job['skills'], ['wake:journal'])
+        self.assertEqual(job['skills'], ['wake-notes:journal'])
         run = subprocess.run(['hermes', 'cron', 'run', job['id']], env=self.env,
                              capture_output=True, text=True, timeout=180)
         self.assertEqual(run.returncode, 0, run.stderr)
@@ -680,7 +736,7 @@ class RealHermesCLITests(unittest.TestCase):
         self.assertTrue(outputs)
         self.assertIn('wakeAgent=false', outputs[-1].read_text())
         self.assertFalse(any((self.home / 'journal').glob('*.md')))
-        removed = subprocess.run(['hermes', 'wake', 'unschedule'], env=self.env,
+        removed = subprocess.run(['hermes', 'wake-notes', 'unschedule'], env=self.env,
                                  capture_output=True, text=True, timeout=120)
         self.assertEqual(removed.returncode, 0, removed.stderr)
         self.assertEqual(json.loads((self.home / 'cron/jobs.json').read_text())['jobs'], [])

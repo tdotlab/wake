@@ -77,7 +77,7 @@ def init_command(args):
     print(f"""
 Next:
   1. Open the folder in Obsidian ("Open folder as vault"). Start at Home.md.
-  2. To connect this vault and optionally install skills, run hermes wake setup again.
+  2. To connect this vault and optionally install skills, run hermes wake-notes setup again.
   3. First chat: ask an agent to "read the brain, then interview me to fill in me/Profile.md".
   4. See the plugin README for setup, the optional nightly journal schedule, and the manual workflow.""")
 
