@@ -1,5 +1,7 @@
 # Wake
 
+![Wake — A shared memory for your agents.](docs/wake-banner.png)
+
 A second brain for your AI agents. One command creates an [Obsidian](https://obsidian.md) vault of plain Markdown with rules that every agent follows: read it before guessing, write to it when you learn something that should outlive the session. Hermes, Claude Code, Codex and anything else that can read files share the same memory, and you read and edit it in Obsidian.
 
 On top of that sits the part that makes Wake more than a folder of notes: **nightly journals**. Each night Wake reads an agent's conversations from the day before, has a model write a short note about them, and files it in the vault with an Evidence section quoting the source, so what the agents *did* is on record next to what they *know*.
