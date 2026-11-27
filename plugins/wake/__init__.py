@@ -248,13 +248,10 @@ def validate_delivery(value):
 # ---- cron job management ---------------------------------------------------------------------
 def managed_jobs():
     from cron.jobs import load_jobs
-    jobs = []
-    for job in load_jobs():
-        if job.get('name') != JOB_NAME:
-            continue
-        if job.get('script') == SCRIPT_NAME or JOB_SKILL in (job.get('skills') or []):
-            jobs.append(job)
-    return jobs
+    config = _load_config()
+    journal = config.get('journal') if isinstance(config.get('journal'), dict) else {}
+    owned_id = journal.get('job_id')
+    return [job for job in load_jobs() if owned_id and job.get('id') == owned_id]
 
 
 def _job_summary(job):
@@ -282,19 +279,17 @@ def write_prerun_script():
 
 
 def _save_journal_settings(config, hour, minute, timezone, delivery):
+    previous = _saved_journal(config)
     config['journal'] = {'time': f'{hour:02d}:{minute:02d}', 'timezone': timezone,
                          'delivery': delivery}
+    if previous.get('job_id'):
+        config['journal']['job_id'] = previous['job_id']
     _write_config(config)
 
 
 def _scheduler_note():
     print('The job fires only while the Hermes cron scheduler is running '
           '(check `hermes cron status`).')
-
-
-def _name_conflicts():
-    from cron.jobs import load_jobs
-    return [job for job in load_jobs() if job.get('name') == JOB_NAME]
 
 
 # ---- setup -----------------------------------------------------------------------------------
@@ -366,19 +361,33 @@ def _setup_schedule():
         print(f'Invalid delivery: {exc}. No journal job created.')
         return 1
 
+    print('Model: [1] follow the configured cron/main model (default), [2] pin a model and provider')
+    choice = input('Model choice [1]: ').strip() or '1'
+    model = provider = None
+    if choice == '2':
+        model = input('Model identifier: ').strip()
+        provider = input('Provider identifier: ').strip()
+        if not model or not provider:
+            print('Model and provider are required. No journal job created.')
+            return 1
+    elif choice != '1':
+        print('Invalid model choice. No journal job created.')
+        return 1
+
     if not config.get('vault'):
         if not _yes('No vault is connected; notes will stay in this profile\'s journal folder. Continue? [Y/n] '):
             print('No journal job created.')
             return 0
 
     try:
-        named = _name_conflicts()
+        from cron.jobs import load_jobs
+        jobs = load_jobs()
     except (OSError, ValueError) as exc:
         print(f'Cannot read the cron store: {exc}. No journal job created.')
         return 1
-    existing = [job for job in named
-                if job.get('script') == SCRIPT_NAME or JOB_SKILL in (job.get('skills') or [])]
-    if len(existing) != len(named):
+    owned_id = saved.get('job_id')
+    existing = [job for job in jobs if owned_id and job.get('id') == owned_id]
+    if any(job.get('name') == JOB_NAME and job.get('id') != owned_id for job in jobs):
         print(f'A cron job named {JOB_NAME!r} already exists but was not created by this setup. '
               'Rename or remove it first; no journal job was created.')
         return 1
@@ -414,21 +423,29 @@ def _setup_schedule():
         if existing:
             job = update_job(job['id'], {
                 'schedule': schedule, 'deliver': delivery, 'prompt': JOB_PROMPT,
-                'script': SCRIPT_NAME, 'skills': [JOB_SKILL],
+                'script': SCRIPT_NAME, 'skills': [JOB_SKILL], 'model': model, 'provider': provider,
             })
             print('Updated: Wake nightly journal')
         else:
             job = create_job(JOB_PROMPT, schedule, name=JOB_NAME, deliver=delivery,
-                             script=SCRIPT_NAME, skills=[JOB_SKILL])
+                             script=SCRIPT_NAME, skills=[JOB_SKILL], model=model, provider=provider)
             print('Scheduled: Wake nightly journal')
     except (OSError, ValueError) as exc:
         print(f'Could not create or update the cron job: {exc}')
         return 1
 
+    config['journal']['job_id'] = job['id']
+    try:
+        _write_config(config)
+    except OSError as exc:
+        print(f"Job {job['id']} exists but its ID could not be saved: {exc}. "
+              f"Remove it with `hermes cron remove {job['id']}` before retrying.")
+        return 1
     print(f"  Job:       {job.get('id')}")
     print(f'  Time:      {hour:02d}:{minute:02d} (Hermes scheduler timezone)')
     print(f'  Day zone:  {timezone}')
     print(f'  Delivery:  {delivery}')
+    print(f'  Model:     {model} via {provider}' if model else '  Model:     follows cron/main configuration')
     print(f'  Script:    {script}')
     print(f'  Skill:     {JOB_SKILL}')
     print(f"  Remove:    hermes cron remove {job.get('id')}   (or: hermes wake unschedule)")

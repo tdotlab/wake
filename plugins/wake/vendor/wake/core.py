@@ -449,10 +449,19 @@ class Journal:
                 try:
                     os.link(temp, path)
                 except FileExistsError:
-                    if path.is_symlink() or not path.is_file() or path.read_bytes() != text.encode('utf-8'):
+                    if path.is_symlink() or not path.is_file():
                         raise FileExistsError(f'Vault note already exists; not overwritten: {path}')
+                    existing = path.read_bytes()
+                    if existing != text.encode('utf-8'):
+                        previous = self.root / f'{day}.md'
+                        if previous.is_symlink() or not previous.is_file() or previous.read_bytes() != existing:
+                            raise FileExistsError(f'Vault note already exists; not overwritten: {path}')
+                        # The existing vault copy matches our last published local note.
+                        # The journal lock serializes Wake, but not external editors.
+                        os.replace(temp, path)
             finally:
-                os.unlink(temp)
+                if os.path.exists(temp):
+                    os.unlink(temp)
 
     def frontmatter(self, m, written_by, generated, created, updated, evidence_refs):
         day = m['day']

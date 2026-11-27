@@ -218,7 +218,7 @@ class SchedulingTests(unittest.TestCase):
         mod = load_plugin()
         with tempfile.TemporaryDirectory() as tmp, patch.dict('os.environ', {'HOME': tmp, 'HERMES_HOME': tmp + '/profile'}):
             home = Path(tmp) / 'profile'
-            code, out = self._run_setup(mod, home, ['', '', '', '', '', '', '', ''])
+            code, out = self._run_setup(mod, home, ['', '', '', '', '', '', '', '', ''])
             self.assertEqual(code, 0)
             jobs = self._jobs()
             self.assertEqual(len(jobs), 1)
@@ -237,18 +237,29 @@ class SchedulingTests(unittest.TestCase):
             self.assertIn('Scheduled: Wake nightly journal', out)
             self.assertIn(job['id'], out)
 
+    def test_schedule_allows_pinning_a_custom_model_and_provider(self):
+        mod = load_plugin()
+        with tempfile.TemporaryDirectory() as tmp, patch.dict('os.environ', {'HOME': tmp, 'HERMES_HOME': tmp + '/profile'}):
+            (Path(tmp) / 'profile' / 'wake').mkdir(parents=True)
+            (Path(tmp) / 'profile' / 'wake/config.json').write_text(json.dumps({'vault': str(Path(tmp) / 'vault')}))
+            code, _ = self._run_setup(mod, Path(tmp) / 'profile', ['', '', '', '', '', '', '', '2', 'meta/muse-spark-1.3-contributor', 'openrouter'])
+            self.assertEqual(code, 0)
+            job = self._jobs()[0]
+            self.assertEqual(job['model'], 'meta/muse-spark-1.3-contributor')
+            self.assertEqual(job['provider'], 'openrouter')
+
     def test_setup_accepts_custom_time_timezone_and_delivery(self):
         mod = load_plugin()
         with tempfile.TemporaryDirectory() as tmp, patch.dict('os.environ', {'HOME': tmp, 'HERMES_HOME': tmp + '/profile'}):
             home = Path(tmp) / 'profile'
-            code, _ = self._run_setup(mod, home, ['', '', '', '', '05:15', 'Europe/Berlin', 'telegram:12345', ''])
+            code, _ = self._run_setup(mod, home, ['', '', '', '', '05:15', 'Europe/Berlin', 'telegram:12345', '', ''])
             self.assertEqual(code, 0)
             job = self._jobs()[0]
             self.assertEqual(job['schedule']['expr'], '15 5 * * *')
             self.assertEqual(job['deliver'], 'telegram:12345')
             config = json.loads((home / 'wake/config.json').read_text())
             self.assertEqual(config['journal'], {'time': '05:15', 'timezone': 'Europe/Berlin',
-                                                'delivery': 'telegram:12345'})
+                                                'delivery': 'telegram:12345', 'job_id': job['id']})
             script = (home / 'scripts/wake_plugin_journal.py').read_text()
             self.assertIn('FALLBACK_PLUGIN', script)
             self.assertIn(str(PLUGIN), script)
@@ -271,7 +282,8 @@ class SchedulingTests(unittest.TestCase):
             home.mkdir(parents=True)
             existing = create_job('old prompt', '0 1 * * *', name='Wake nightly journal',
                                   script='wake_plugin_journal.py', skills=['wake:journal'])
-            code, out = self._run_setup(mod, home, ['', '', '', '', '', '', '', '', ''])
+            mod._write_config({'journal': {'job_id': existing['id']}})
+            code, out = self._run_setup(mod, home, ['', '', '', '', '', '', '', '', '', ''])
             self.assertEqual(code, 0)
             jobs = self._jobs()
             self.assertEqual(len(jobs), 1)
@@ -288,7 +300,8 @@ class SchedulingTests(unittest.TestCase):
             home.mkdir(parents=True)
             existing = create_job('old prompt', '0 1 * * *', name='Wake nightly journal',
                                   script='wake_plugin_journal.py', skills=['wake:journal'])
-            code, _ = self._run_setup(mod, home, ['', '', '', '', '05:15', 'UTC', 'local', '', 'y'])
+            mod._write_config({'journal': {'job_id': existing['id']}})
+            code, _ = self._run_setup(mod, home, ['', '', '', '', '05:15', 'UTC', 'local', '', '', 'y'])
             self.assertEqual(code, 0)
             jobs = self._jobs()
             self.assertEqual(len(jobs), 1)
@@ -305,10 +318,19 @@ class SchedulingTests(unittest.TestCase):
             (home / 'wake').mkdir(parents=True)
             (home / 'wake/config.json').write_text(json.dumps({'vault': str(Path(tmp) / 'vault')}))
             create_job('other', '0 1 * * *', name='Wake nightly journal', script='other.py')
-            code, out = self._run_setup(mod, home, ['', '', '', '', '', '', ''])
+            code, out = self._run_setup(mod, home, ['', '', '', '', '', '', '', ''])
             self.assertNotEqual(code, 0)
             self.assertIn('not created by this setup', out)
             self.assertEqual(len(self._jobs()), 1)
+
+    def test_unschedule_does_not_remove_same_name_unowned_job(self):
+        mod = load_plugin()
+        from cron.jobs import create_job
+        with tempfile.TemporaryDirectory() as tmp, patch.dict('os.environ', {'HOME': tmp, 'HERMES_HOME': tmp + '/profile'}):
+            job = create_job('custom', '0 1 * * *', name='Wake nightly journal', script='other.py', skills=['wake:journal'])
+            with contextlib.redirect_stdout(io.StringIO()):
+                mod.unschedule()
+            self.assertIn(job['id'], {j['id'] for j in self._jobs()})
 
     def test_unschedule_removes_only_the_wake_job(self):
         import argparse
@@ -319,6 +341,7 @@ class SchedulingTests(unittest.TestCase):
             home.mkdir(parents=True)
             wake = create_job('journal', '30 0 * * *', name='Wake nightly journal',
                               script='wake_plugin_journal.py', skills=['wake:journal'])
+            mod._write_config({'journal': {'job_id': wake['id']}})
             other = create_job('other', '0 1 * * *', name='other job', script='wake_plugin_journal.py')
             parser = argparse.ArgumentParser()
             mod.configure_parser(parser)
@@ -457,6 +480,41 @@ class SecurityRegressionTests(unittest.TestCase):
             self.assertEqual(mod.command(parser.parse_args(['journal', 'commit', *opts])), 0)
             self.assertFalse((root / 'vault/journal').exists())
 
+    def test_late_messages_update_an_unchanged_wake_vault_copy(self):
+        from test_hermes import make_db
+        from wake.core import day_bounds
+        mod = load_plugin()
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            vault = root / 'vault'
+            vault.mkdir()
+            db = root / 'state.db'
+            c = make_db(db)
+            day = '2026-10-22'
+            add(c, 1, 's1', 'user', 'first', day_bounds(day, 'UTC')[0] + 1)
+            opts = ('--day', day, '--timezone', 'UTC', '--db', str(db), '--journal', str(root / 'journal'), '--vault', str(vault), '--no-sync')
+            self.assertEqual(mod.run_wake('journal', 'hermes', 'prepare', *opts), 0)
+            draft = root / 'journal/.staging' / day / 'draft.md'
+            draft.write_text(draft_for(day, ['s:s1/m:1']))
+            self.assertEqual(mod.run_wake('journal', 'hermes', 'commit', *opts), 0)
+            target = vault / 'journal/hermes/2026-10' / f'{day}.md'
+            previous = target.read_bytes()
+            add(c, 2, 's1', 'user', 'late', day_bounds(day, 'UTC')[0] + 2)
+            c.close()
+            self.assertEqual(mod.run_wake('journal', 'hermes', 'prepare', *opts), 0)
+            draft.write_text(draft_for(day, ['s:s1/m:2'], summary='Updated.'))
+            self.assertEqual(mod.run_wake('journal', 'hermes', 'commit', *opts), 0)
+            self.assertNotEqual(previous, target.read_bytes())
+            self.assertEqual(target.read_bytes(), (root / 'journal' / f'{day}.md').read_bytes())
+            target.write_text('owner edit')
+            c = sqlite3.connect(db)
+            add(c, 3, 's1', 'user', 'another late message', day_bounds(day, 'UTC')[0] + 3)
+            c.close()
+            self.assertEqual(mod.run_wake('journal', 'hermes', 'prepare', *opts), 0)
+            draft.write_text(draft_for(day, ['s:s1/m:3'], summary='Updated again.'))
+            self.assertNotEqual(mod.run_wake('journal', 'hermes', 'commit', *opts), 0)
+            self.assertEqual(target.read_text(), 'owner edit')
+
     def test_explicit_nongit_vault_receives_first_journal_copy(self):
         from test_hermes import make_db, add, draft_for
         from wake.core import day_bounds
@@ -543,7 +601,7 @@ class RealHermesCLITests(unittest.TestCase):
                                     stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=self.env)
             os.close(slave)
             slave = None
-            os.write(master, b'\n\n\n\n\n\n\n\n')
+            os.write(master, b'\n\n\n\n\n\n\n\n\n')
             out, err = proc.communicate(timeout=180)
             self.assertEqual(proc.returncode, 0, (out, err))
             self.assertIn(b'Scheduled: Wake nightly journal', out)
