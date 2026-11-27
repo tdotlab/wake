@@ -2,6 +2,9 @@
 import contextlib
 import importlib.util
 import io
+import os
+import shutil
+import subprocess
 import tempfile
 import unittest
 from pathlib import Path
@@ -16,6 +19,24 @@ def load_plugin():
     return module
 
 class PluginTests(unittest.TestCase):
+    def setUp(self):
+        tty = patch('sys.stdin.isatty', return_value=True)
+        tty.start()
+        self.addCleanup(tty.stop)
+
+    def test_setup_rejects_noninteractive_stdin_before_prompting(self):
+        mod = load_plugin()
+        with patch('sys.stdin', io.StringIO('')), patch('builtins.input') as prompt:
+            self.assertNotEqual(mod.setup(), 0)
+        prompt.assert_not_called()
+
+    def test_evidence_bulk_rewrite_not_exposed(self):
+        import argparse
+        parser = argparse.ArgumentParser()
+        load_plugin().configure_parser(parser)
+        with contextlib.redirect_stderr(io.StringIO()), self.assertRaises(SystemExit):
+            parser.parse_args(['journal', 'evidence'])
+
     def test_vault_init_does_not_advertise_unsupported_plugin_scheduling(self):
         import subprocess
         import sys
@@ -83,6 +104,11 @@ class PluginTests(unittest.TestCase):
             self.assertFalse(any('memory' in prompt.lower() for prompt in prompts))
 
 class ExistingVaultTests(unittest.TestCase):
+    def setUp(self):
+        tty = patch('sys.stdin.isatty', return_value=True)
+        tty.start()
+        self.addCleanup(tty.stop)
+
     def test_setup_installs_only_three_skills_with_per_skill_fallback(self):
         mod = load_plugin()
         with tempfile.TemporaryDirectory() as tmp, patch.dict('os.environ', {'HOME': tmp, 'HERMES_HOME': tmp + '/profile'}):
@@ -231,3 +257,61 @@ class SecurityRegressionTests(unittest.TestCase):
             (root / 'journal/.staging/2026-10-22/draft.md').write_text(draft_for('2026-10-22', ['s:s1/m:1']))
             self.assertEqual(mod.run_wake('journal', 'hermes', 'commit', *opts), 0)
             self.assertEqual((vault / 'journal/hermes/2026-10/2026-10-22.md').read_bytes(), (root / 'journal/2026-10-22.md').read_bytes())
+
+
+@unittest.skipUnless(os.name == 'posix' and shutil.which('hermes'), 'requires POSIX and Hermes CLI')
+class RealHermesCLITests(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.home = Path(self.tmp.name)
+        (self.home / 'plugins').mkdir()
+        self.plugin = self.home / 'plugins/wake'
+        shutil.copytree(PLUGIN, self.plugin, ignore=shutil.ignore_patterns('__pycache__', '*.pyc'))
+        (self.home / 'config.yaml').write_text('plugins:\n  enabled:\n    - wake\n')
+        self.env = {key: os.environ[key] for key in ('PATH', 'HERMES_SITE') if key in os.environ}
+        self.env.update(HOME=str(self.home), HERMES_HOME=str(self.home), PYTHONDONTWRITEBYTECODE='1')
+
+    def test_setup_silent_open_pipe_exits_without_writes(self):
+        proc = subprocess.Popen(['hermes', 'wake', 'setup'], stdin=subprocess.PIPE,
+                                stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=self.env)
+        try:
+            code = proc.wait(timeout=120)  # stdin remains open and silent
+            output = proc.stderr.read().decode()
+            self.assertNotEqual(code, 0)
+            self.assertIn('requires an interactive terminal', output)
+            self.assertFalse((self.home / 'wake').exists())
+        finally:
+            if proc.poll() is None:
+                proc.kill()
+                proc.wait()
+            proc.stdin.close()
+            proc.stdout.close()
+            proc.stderr.close()
+
+    def test_setup_via_pty_decline_and_subprocess_no_bytecode(self):
+        import pty
+        master, slave = pty.openpty()
+        proc = None
+        try:
+            proc = subprocess.Popen(['hermes', 'wake', 'setup'], stdin=slave,
+                                    stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=self.env)
+            os.close(slave)
+            slave = None
+            os.write(master, b'\n\n\n')
+            out, err = proc.communicate(timeout=120)
+            self.assertEqual(proc.returncode, 0, (out, err))
+            self.assertIn(b'No schedules are created', out)
+            self.assertFalse((self.home / 'wake').exists())
+            # Exercise the isolated Wake subprocess from the real CLI too.
+            help_result = subprocess.run(['hermes', 'wake', 'journal', 'status', '--journal', str(self.home / 'journal')],
+                                         env=self.env, capture_output=True, timeout=120)
+            self.assertEqual(help_result.returncode, 0, help_result.stderr)
+            self.assertEqual(list(self.plugin.rglob('*.pyc')), [])
+        finally:
+            if proc is not None and proc.poll() is None:
+                proc.kill()
+                proc.communicate()
+            os.close(master)
+            if slave is not None:
+                os.close(slave)

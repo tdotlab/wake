@@ -11,7 +11,7 @@ ROOT = Path(__file__).resolve().parent
 
 def run_wake(*args):
     bootstrap = "import runpy, sys; sys.path.insert(0, sys.argv.pop(1)); runpy.run_module('wake', run_name='__main__')"
-    return subprocess.call([sys.executable, '-I', '-c', bootstrap, str(ROOT / 'vendor'), *args])
+    return subprocess.call([sys.executable, '-I', '-B', '-c', bootstrap, str(ROOT / 'vendor'), *args])
 
 
 def connected_vault():
@@ -42,6 +42,9 @@ def connect_vault(path):
 
 
 def setup():
+    if not sys.stdin.isatty():
+        print('Wake setup requires an interactive terminal.', file=sys.stderr)
+        return 1
     print('Wake setup: each choice is optional. No schedules are created.')
     if input('Create a new starter vault? [y/N] ').strip().lower() == 'y':
         path = input('New empty vault path: ').strip()
@@ -90,7 +93,7 @@ def configure_parser(parser):
     sub = parser.add_subparsers(dest='wake_action', required=True)
     sub.add_parser('setup', help='Choose optional setup; defaults to no changes')
     journal = sub.add_parser('journal', help='Run a manual Hermes journal step')
-    journal.add_argument('action', choices=['prepare', 'commit', 'status', 'evidence'])
+    journal.add_argument('action', choices=['prepare', 'commit', 'status'])
     journal.add_argument('--day')
     journal.add_argument('--timezone')
     journal.add_argument('--db')

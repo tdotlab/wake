@@ -62,7 +62,7 @@ Hermes runs a pre-run script (`deploy/hermes/daily_journal.py`, a shim over this
 
 The preview installer must use the `plugins/wake` subdirectory and an explicit full commit SHA: the default branch may not contain the plugin. The bundled CLI's post-init guidance points back to plugin setup and the manual workflow, not standalone scheduling or a separately installed `wake` executable.
 
-Journal scheduling is not shipped: the manual agent workflow lacks enforced staging-only confinement, so putting it on cron would cross the model-write boundary. The plugin makes no claim of verified unattended operation.
+The plugin's manual journal guide is human-authored draft only. Model-authored journaling and scheduling are unavailable because there is no enforced staging-only confinement. The bulk evidence rewrite action is not exposed through the plugin. The plugin and subprocesses run with the invoking user's host permissions, not in an OS sandbox. The plugin makes no claim of verified unattended operation.
 
 ## State
 
