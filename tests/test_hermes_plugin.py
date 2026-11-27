@@ -31,6 +31,18 @@ class PluginTests(unittest.TestCase):
         tty.start()
         self.addCleanup(tty.stop)
 
+    def test_picker_selects_a_discovered_provider_and_model(self):
+        mod = load_plugin()
+        rows = [{'slug': 'openrouter', 'label': 'OpenRouter', 'models': ['example/first', 'example/second']}]
+        with patch.object(mod, '_discover_model_providers', return_value=rows), patch('builtins.input', side_effect=['2', '1', '2']), contextlib.redirect_stdout(io.StringIO()):
+            self.assertEqual(mod._choose_journal_model(), ('example/second', 'openrouter'))
+
+    def test_picker_allows_paging_to_later_models(self):
+        mod = load_plugin()
+        rows = [{'slug': 'example', 'models': [f'model-{i}' for i in range(1, 32)]}]
+        with patch.object(mod, '_discover_model_providers', return_value=rows), patch('builtins.input', side_effect=['2', '1', 'n', '26']), contextlib.redirect_stdout(io.StringIO()):
+            self.assertEqual(mod._choose_journal_model(), ('model-26', 'example'))
+
     def test_setup_rejects_noninteractive_stdin_before_prompting(self):
         mod = load_plugin()
         with patch('sys.stdin', io.StringIO('')), patch('builtins.input') as prompt:
@@ -237,16 +249,34 @@ class SchedulingTests(unittest.TestCase):
             self.assertIn('Scheduled: Wake nightly journal', out)
             self.assertIn(job['id'], out)
 
-    def test_schedule_allows_pinning_a_custom_model_and_provider(self):
+    def test_schedule_allows_pinning_a_discovered_model_and_provider(self):
         mod = load_plugin()
         with tempfile.TemporaryDirectory() as tmp, patch.dict('os.environ', {'HOME': tmp, 'HERMES_HOME': tmp + '/profile'}):
             (Path(tmp) / 'profile' / 'wake').mkdir(parents=True)
             (Path(tmp) / 'profile' / 'wake/config.json').write_text(json.dumps({'vault': str(Path(tmp) / 'vault')}))
-            code, _ = self._run_setup(mod, Path(tmp) / 'profile', ['', '', '', '', '', '', '', '2', 'meta/muse-spark-1.3-contributor', 'openrouter'])
+            rows = [{'slug': 'openrouter', 'models': ['meta/muse-spark-1.3-contributor']}]
+            with patch.object(mod, '_discover_model_providers', return_value=rows):
+                code, _ = self._run_setup(mod, Path(tmp) / 'profile', ['', '', '', '', '', '', '', '2', '1', '1'])
             self.assertEqual(code, 0)
             job = self._jobs()[0]
             self.assertEqual(job['model'], 'meta/muse-spark-1.3-contributor')
             self.assertEqual(job['provider'], 'openrouter')
+
+    def test_setup_shows_that_fire_time_uses_scheduler_timezone_before_asking_for_time(self):
+        mod = load_plugin()
+        with tempfile.TemporaryDirectory() as tmp, patch.dict('os.environ', {'HOME': tmp, 'HERMES_HOME': tmp + '/profile'}):
+            answers = iter(['', '', '', '', '01:30', 'America/New_York', 'local', '', ''])
+            seen = []
+            with contextlib.redirect_stdout(io.StringIO()) as out:
+                def answer(prompt):
+                    if prompt.startswith('Nightly time'):
+                        seen.append(out.getvalue())
+                    return next(answers)
+                with patch('builtins.input', side_effect=answer):
+                    self.assertEqual(mod.setup(), 0)
+            text = seen[0]
+            self.assertIn('scheduler timezone', text.lower())
+            self.assertIn('day boundary', text.lower())
 
     def test_setup_accepts_custom_time_timezone_and_delivery(self):
         mod = load_plugin()
@@ -291,6 +321,25 @@ class SchedulingTests(unittest.TestCase):
             self.assertEqual(jobs[0]['prompt'], 'old prompt')
             self.assertEqual(jobs[0]['schedule']['expr'], '0 1 * * *')
             self.assertIn('left unchanged', out)
+
+    def test_schedule_update_confirms_selected_model_and_provider(self):
+        mod = load_plugin()
+        from cron.jobs import create_job
+        with tempfile.TemporaryDirectory() as tmp, patch.dict('os.environ', {'HOME': tmp, 'HERMES_HOME': tmp + '/profile'}):
+            existing = create_job('old prompt', '0 1 * * *', name='Wake nightly journal',
+                                  script='wake_plugin_journal.py', skills=['wake:journal'])
+            mod._write_config({'journal': {'job_id': existing['id']}})
+            rows = [{'slug': 'example-provider', 'models': ['example/model']}]
+            seen = []
+            answers = iter(['', '', '', '', '', '', '', '2', '1', '1', '', 'n'])
+            def answer(prompt):
+                if prompt.startswith('Update it'):
+                    seen.append(prompt)
+                return next(answers)
+            with patch.object(mod, '_discover_model_providers', return_value=rows), patch('builtins.input', side_effect=answer), contextlib.redirect_stdout(io.StringIO()):
+                self.assertEqual(mod.setup(), 0)
+            self.assertIn('example/model', seen[0])
+            self.assertIn('example-provider', seen[0])
 
     def test_setup_updates_an_existing_job_only_after_explicit_yes(self):
         mod = load_plugin()

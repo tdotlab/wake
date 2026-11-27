@@ -306,6 +306,53 @@ def _saved_journal(config):
     return saved if isinstance(saved, dict) else {}
 
 
+def _discover_model_providers():
+    from hermes_cli.inventory import build_models_payload, load_picker_context
+    payload = build_models_payload(load_picker_context(), include_unconfigured=False,
+                                   for_picker=True, probe_custom_providers=False)
+    return [row for row in payload.get('providers', [])
+            if row.get('slug') and row.get('slug') != 'moa' and row.get('models')]
+
+
+def _choose_journal_model():
+    print('Model: [1] follow the configured cron/main model (default), [2] choose an available model')
+    choice = input('Model choice [1]: ').strip() or '1'
+    if choice == '1':
+        return None, None
+    if choice != '2':
+        raise ValueError('Invalid model choice')
+    try:
+        providers = _discover_model_providers()
+    except Exception as exc:
+        raise ValueError(f'Could not discover models ({exc}); choose the default or retry') from exc
+    if not providers:
+        raise ValueError('No configured providers with listed models were found')
+    print('Configured providers (listed models are not a guarantee of access):')
+    for index, row in enumerate(providers, 1):
+        print(f"  {index}. {row.get('name') or row.get('label') or row['slug']} ({row['slug']})")
+    raw = input('Provider number: ').strip()
+    if not raw.isdigit() or not 1 <= int(raw) <= len(providers):
+        raise ValueError('Invalid provider choice')
+    provider = providers[int(raw) - 1]
+    models = [model for model in provider['models'] if isinstance(model, str) and model]
+    if not models:
+        raise ValueError('No models were listed for that provider')
+    page = 0
+    while True:
+        start = page * 25
+        for index, model in enumerate(models[start:start + 25], start + 1):
+            print(f'  {index}. {model}')
+        raw = input('Model number (n/p for next/previous page, q to cancel): ').strip().lower()
+        if raw == 'n' and start + 25 < len(models):
+            page += 1
+        elif raw == 'p' and page:
+            page -= 1
+        elif raw.isdigit() and start < int(raw) <= min(start + 25, len(models)):
+            return models[int(raw) - 1], provider['slug']
+        else:
+            raise ValueError('Model selection cancelled or invalid')
+
+
 def _setup_schedule():
     try:
         config = _load_config()
@@ -315,12 +362,14 @@ def _setup_schedule():
     saved = _saved_journal(config)
     print()
     print('Nightly journal')
-    print('  Hermes cron runs a pre-run script shortly after midnight. It stages one completed')
+    print('  Hermes cron runs a pre-run script at the selected time. It stages one completed')
     print('  day from this profile\'s state.db and prints a manifest; when there is nothing to')
     print('  journal it skips the agent. Otherwise an agent follows the wake:journal skill, writes')
     print('  only the draft, and the commit script validates, adds Evidence and publishes it.')
     print('  The agent runs with your host permissions: confinement is procedural, not an OS')
     print('  sandbox. Notes also go to the connected vault if one is set; nothing is git-synced.')
+    print('  Fire time uses the Hermes scheduler timezone; the journal day boundary uses')
+    print('  the separately selected timezone. Set the scheduler timezone to match if needed.')
     if not _yes('Schedule the nightly Hermes journal? [Y/n] '):
         print('No journal job created. Run `hermes wake setup` again to add one.')
         return 0
@@ -361,17 +410,10 @@ def _setup_schedule():
         print(f'Invalid delivery: {exc}. No journal job created.')
         return 1
 
-    print('Model: [1] follow the configured cron/main model (default), [2] pin a model and provider')
-    choice = input('Model choice [1]: ').strip() or '1'
-    model = provider = None
-    if choice == '2':
-        model = input('Model identifier: ').strip()
-        provider = input('Provider identifier: ').strip()
-        if not model or not provider:
-            print('Model and provider are required. No journal job created.')
-            return 1
-    elif choice != '1':
-        print('Invalid model choice. No journal job created.')
+    try:
+        model, provider = _choose_journal_model()
+    except ValueError as exc:
+        print(f'{exc}. No journal job created.')
         return 1
 
     if not config.get('vault'):
@@ -401,7 +443,9 @@ def _setup_schedule():
     if existing:
         job = existing[0]
         print('Existing Wake journal job: ' + _job_summary(job))
-        if not _default_no(f'Update it to {hour:02d}:{minute:02d} {timezone}, deliver {delivery}? [y/N] '):
+        selected_model = f'{model} via {provider}' if model else 'follow cron/main configuration'
+        if not _default_no(f'Update it to {hour:02d}:{minute:02d} (scheduler timezone), '
+                           f'day zone {timezone}, deliver {delivery}, model {selected_model}? [y/N] '):
             print(f"Existing Wake journal job {job.get('id')} left unchanged. No new job created.")
             return 0
 
