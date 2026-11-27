@@ -164,3 +164,90 @@ class ExistingVaultTests(unittest.TestCase):
                 self.assertEqual(mod.setup(), 0)
             text = (Path(tmp) / 'profile/skills/brain/SKILL.md').read_text()
             self.assertIn('wake/config.json', text)
+
+class SecurityRegressionTests(unittest.TestCase):
+    def test_subprocess_ignores_hostile_working_directory(self):
+        import os
+        mod = load_plugin()
+        with tempfile.TemporaryDirectory() as tmp:
+            cwd = Path.cwd()
+            try:
+                os.chdir(tmp)
+                Path('wake.py').write_text("from pathlib import Path\nPath('pwned').touch()\n")
+                self.assertEqual(mod.run_wake('--help'), 0)
+                self.assertFalse(Path('pwned').exists())
+            finally:
+                os.chdir(cwd)
+
+    def test_starter_vault_requires_approval_before_git_sync(self):
+        text = (PLUGIN / 'vendor/wake/starter/AGENTS.md').read_text()
+        skill = (PLUGIN / 'vendor/wake/starter/_system/skills/brain/SKILL.md').read_text()
+        self.assertIn('explicit approval', text.lower())
+        self.assertIn('explicit approval', skill.lower())
+
+    def test_journal_conflict_preserves_note_and_pending_draft(self):
+        from test_hermes import make_db, add, draft_for
+        from wake.core import day_bounds
+        mod = load_plugin()
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            vault = root / 'vault'
+            (vault / '.git').mkdir(parents=True)
+            target = vault / 'journal/hermes/2026-10/2026-10-22.md'
+            target.parent.mkdir(parents=True)
+            target.write_text('owner note')
+            old = target.parent.parent / '2026-10-22.md'
+            old.write_text('old owner note')
+            db = root / 'state.db'
+            c = make_db(db)
+            add(c, 1, 's1', 'user', 'hello', day_bounds('2026-10-22', 'UTC')[0] + 1)
+            c.close()
+            opts = ('--day', '2026-10-22', '--timezone', 'UTC', '--db', str(db), '--journal', str(root / 'journal'), '--vault', str(vault), '--no-sync')
+            self.assertEqual(mod.run_wake('journal', 'hermes', 'prepare', *opts), 0)
+            draft = root / 'journal/.staging/2026-10-22/draft.md'
+            draft.write_text(draft_for('2026-10-22', ['s:s1/m:1']))
+            self.assertNotEqual(mod.run_wake('journal', 'hermes', 'commit', *opts), 0)
+            self.assertEqual(target.read_text(), 'owner note')
+            self.assertEqual(old.read_text(), 'old owner note')
+            self.assertTrue(draft.exists())
+            import json
+            state = json.loads((root / 'journal/.state.json').read_text())
+            self.assertNotIn('2026-10-22', state['days'])
+
+    def test_unconnected_journal_ignores_environment_vault(self):
+        import argparse
+        from test_hermes import make_db, add, draft_for
+        from wake.core import day_bounds
+        mod = load_plugin()
+        with tempfile.TemporaryDirectory() as tmp, patch.dict('os.environ', {'HERMES_HOME': tmp + '/profile', 'WAKE_VAULT': tmp + '/vault'}):
+            root = Path(tmp)
+            (root / 'vault/.git').mkdir(parents=True)
+            db = root / 'state.db'
+            c = make_db(db)
+            add(c, 1, 's1', 'user', 'hello', day_bounds('2026-10-22', 'UTC')[0] + 1)
+            c.close()
+            parser = argparse.ArgumentParser()
+            mod.configure_parser(parser)
+            opts = ['--day', '2026-10-22', '--timezone', 'UTC', '--db', str(db), '--journal', str(root / 'journal')]
+            self.assertEqual(mod.command(parser.parse_args(['journal', 'prepare', *opts])), 0)
+            (root / 'journal/.staging/2026-10-22/draft.md').write_text(draft_for('2026-10-22', ['s:s1/m:1']))
+            self.assertEqual(mod.command(parser.parse_args(['journal', 'commit', *opts])), 0)
+            self.assertFalse((root / 'vault/journal').exists())
+
+    def test_explicit_nongit_vault_receives_first_journal_copy(self):
+        from test_hermes import make_db, add, draft_for
+        from wake.core import day_bounds
+        mod = load_plugin()
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            vault = root / 'vault'
+            vault.mkdir()
+            db = root / 'state.db'
+            c = make_db(db)
+            add(c, 1, 's1', 'user', 'hello', day_bounds('2026-10-22', 'UTC')[0] + 1)
+            c.close()
+            opts = ('--day', '2026-10-22', '--timezone', 'UTC', '--db', str(db), '--journal', str(root / 'journal'), '--vault', str(vault), '--no-sync')
+            self.assertEqual(mod.run_wake('journal', 'hermes', 'prepare', *opts), 0)
+            (root / 'journal/.staging/2026-10-22/draft.md').write_text(draft_for('2026-10-22', ['s:s1/m:1']))
+            self.assertEqual(mod.run_wake('journal', 'hermes', 'commit', *opts), 0)
+            self.assertEqual((vault / 'journal/hermes/2026-10/2026-10-22.md').read_bytes(), (root / 'journal/2026-10-22.md').read_bytes())

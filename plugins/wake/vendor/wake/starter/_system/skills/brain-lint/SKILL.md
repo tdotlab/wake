@@ -43,6 +43,6 @@ Prefer links that already exist in prose: unambiguous mentions, clear author-to-
 ## 4. Finish
 
 - `brain.py log lint "Maintenance pass" --agent <you> --detail "<what was fixed>"`
-- `brain.py sync -m "<agent>: lint"`
+- Only with explicit approval to commit, rebase, and push: `brain.py sync -m "<agent>: lint"`
 
 Report to the owner in a few lines what you fixed, what needs their call, and any conflicts. Never delete the owner's notes. Archive them with `status: archived` instead.

@@ -46,6 +46,6 @@ Create `wiki/sources/<Title>.md` from `_system/templates/Source.md`. Include:
 - Add new notes to `index.md`.
 - `brain.py log ingest "<Source Title>" --agent <you> --detail "touched: <notes>"`.
 - Update `hot.md` if it changes what's live.
-- `brain.py sync -m "<agent>: ingest <title>"`.
+- Only with explicit approval to commit, rebase, and push: `brain.py sync -m "<agent>: ingest <title>"`.
 
 Tell the owner in two or three lines what the source said that was new, which notes changed, and any conflicts. If the owner is around and the source is meaty, discuss the takeaways before filing; they may want a different emphasis.

@@ -47,7 +47,7 @@ Save when you learn something durable: a decision and its reason, a status chang
    - New note: add a line to `index.md`.
    - `brain.py log save "<title>" --agent <your name>`.
    - Update `hot.md` if it changes what's live.
-   - `brain.py sync -m "<agent>: <what>"`.
+   - Only with explicit approval to commit, rebase, and push: `brain.py sync -m "<agent>: <what>"`.
 
 Keep notes accurate and specific: names, paths, commit hashes, dates. Mark anything uncertain `Unverified:`. Never write secrets; write where they live instead.
 
@@ -57,7 +57,7 @@ When asked whether the vault is current, run `git -C <vault> fetch` and `git -C 
 
 ## Start of a work session on a project
 
-Read `hot.md`, then `projects/<Project>.md`. Mention anything relevant that the note says is pending or parked. At the end, update the project note's Status and Next, log it, and sync.
+Read `hot.md`, then `projects/<Project>.md`. Mention anything relevant that the note says is pending or parked. At the end, update the project note's Status and Next, and log it; sync only with explicit approval to commit, rebase, and push.
 
 ## End of a long session
 

@@ -70,7 +70,7 @@ Anything the owner writes in `daily/` and `notes/` is open to every agent to rea
 1. New note: add it to `index.md` under the right heading with a one-line summary.
 2. Add an entry to `log.md` with `python _system/scripts/brain.py log <op> "<title>" --agent <you>`. Ops: `ingest`, `save`, `update`, `answer`, `lint`, `setup`.
 3. If the change matters for what's live, update `hot.md`. Aim for about 60 lines. Prune old items rather than live ones.
-4. Sync: `python _system/scripts/brain.py sync -m "<agent>: <what>"`. It commits, pulls with rebase and pushes. Run it before you start writing too, so you're working on the latest.
+4. Do not sync automatically. `brain.py sync` commits, rebases and pushes; run it only with the owner's explicit approval for those operations.
 
 `python3` on Linux and macOS. If Wake is installed, `wake brain <command>` does the same thing.
 
@@ -86,8 +86,8 @@ Skills in `_system/skills/` hold the detailed procedures:
 
 ## Sharing the vault
 
-- The vault is a git repo, ideally a private one. Each machine has a clone, and agents sync through git. Keep it private unless you have read every note: journals quote conversations.
-- If a pull conflicts, `brain.py sync` aborts the rebase and fails, leaving your commit as it was; resolve it with `git pull --rebase` in the vault. On conflict, keep both versions' facts, prefer the owner's wording, and never discard the owner's edits.
+- The vault is a git repo, ideally a private one. Each machine has a clone, and agents may sync through git only with explicit approval. Keep it private unless you have read every note: journals quote conversations.
+- If a pull conflicts, `brain.py sync` aborts the rebase and fails, leaving your commit as it was; stop and ask the owner before any recovery operation. On conflict, keep both versions' facts, prefer the owner's wording, and never discard the owner's edits.
 - The owner edits in Obsidian too. If a note changed since you read it, re-read it before writing.
 - `brain.py` uses only the Python standard library.
 

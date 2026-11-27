@@ -12,9 +12,8 @@ ROOT = Path(__file__).resolve().parent
 
 
 def run_wake(*args):
-    env = os.environ.copy()
-    env['PYTHONPATH'] = str(ROOT / 'vendor') + os.pathsep + env.get('PYTHONPATH', '')
-    return subprocess.call([sys.executable, '-m', 'wake', *args], env=env)
+    bootstrap = "import runpy, sys; sys.path.insert(0, sys.argv.pop(1)); runpy.run_module('wake', run_name='__main__')"
+    return subprocess.call([sys.executable, '-I', '-c', bootstrap, str(ROOT / 'vendor'), *args])
 
 
 

@@ -23,8 +23,8 @@ def hermes_journal(args):
     from .sources.hermes import HermesSource
     home = Path(os.environ.get('HERMES_HOME') or Path.home() / '.hermes')
     db = args.db or home / 'state.db'
-    vault = Path(args.vault) if args.vault else default_vault()
-    vault_dir = vault / 'journal' / 'hermes' if (vault / '.git').is_dir() else None
+    vault = Path(args.vault) if args.vault else None
+    vault_dir = vault / 'journal' / 'hermes' if vault else None
     return Journal(HermesSource(db, args.timezone), args.journal or home / 'journal', vault_dir=vault_dir), vault
 
 

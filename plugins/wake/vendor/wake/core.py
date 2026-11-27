@@ -23,6 +23,7 @@ import os
 import re
 import shutil
 import textwrap
+import tempfile
 import uuid
 
 REOPEN_DAYS = 3
@@ -414,6 +415,7 @@ class Journal:
         local = now.astimezone(ZoneInfo(self.source.timezone)).date().isoformat()
         text = self.frontmatter(manifest, written_by, generated, created or local, local, evidence_refs)
         text += body.strip() + '\n'
+        self.copy_to_vault(day, text)
         atomic_write(final, text)
         meta = {k: v for k, v in manifest.items() if k not in ('messages', 'refs')}
         meta.update({'written_by': written_by, 'generated': generated, 'evidence_refs': evidence_refs})
@@ -425,7 +427,6 @@ class Journal:
         staging = self.root / '.staging' / day
         if staging.exists():
             shutil.rmtree(staging)
-        self.copy_to_vault(day, text)
         self.published.append(day)
         return final
 
@@ -436,8 +437,22 @@ class Journal:
 
     def copy_to_vault(self, day, text):
         if self.vault_dir:
-            atomic_write(self.vault_path(day), text)
-            (self.vault_dir / f'{day}.md').unlink(missing_ok=True)  # a flat copy from before month folders
+            path = self.vault_path(day)
+            path.parent.mkdir(parents=True, exist_ok=True)
+            # Publish a complete file without replacing any existing vault note.
+            fd, temp = tempfile.mkstemp(prefix='.wake-', dir=path.parent)
+            try:
+                with os.fdopen(fd, 'w', encoding='utf-8') as f:
+                    f.write(text)
+                    f.flush()
+                    os.fsync(f.fileno())
+                try:
+                    os.link(temp, path)
+                except FileExistsError:
+                    if path.is_symlink() or not path.is_file() or path.read_bytes() != text.encode('utf-8'):
+                        raise FileExistsError(f'Vault note already exists; not overwritten: {path}')
+            finally:
+                os.unlink(temp)
 
     def frontmatter(self, m, written_by, generated, created, updated, evidence_refs):
         day = m['day']
@@ -477,6 +492,7 @@ class Journal:
                 new = head + ('\n' if head else '') + body.rstrip() + ('\n\n' + evidence if evidence else '\n')
                 if head and (new != old or not re.search(r'^created: ', head, re.M)):
                     new = self.stamp_dates(new, today)
+                self.copy_to_vault(day, new)
                 if new != old:
                     atomic_write(self.root / '.revisions' / day / f'{uuid.uuid4().hex}.md', old)
                     atomic_write(path, new)
@@ -486,7 +502,6 @@ class Journal:
                     if meta.get('evidence_refs') != count:
                         meta['evidence_refs'] = count
                         atomic_write(meta_path, json.dumps(meta, indent=2, ensure_ascii=False))
-                self.copy_to_vault(day, new)
                 self.published.append(day)
                 done.append((day, count))
                 if log:
