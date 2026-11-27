@@ -31,6 +31,13 @@ class PluginTests(unittest.TestCase):
         tty.start()
         self.addCleanup(tty.stop)
 
+    def test_missing_timezone_data_reports_install_hint(self):
+        from zoneinfo import ZoneInfoNotFoundError
+        mod = load_plugin()
+        with patch('zoneinfo.ZoneInfo', side_effect=ZoneInfoNotFoundError('missing')):
+            with self.assertRaisesRegex(ValueError, 'timezone data.*tzdata'):
+                mod.validate_timezone('America/New_York')
+
     def test_picker_selects_a_discovered_provider_and_model(self):
         mod = load_plugin()
         rows = [{'slug': 'openrouter', 'label': 'OpenRouter', 'models': ['example/first', 'example/second']}]

@@ -209,13 +209,19 @@ def default_timezone():
 
 
 def validate_timezone(value):
-    from zoneinfo import ZoneInfo
+    from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
     value = value.strip()
     if not value:
         raise ValueError('timezone must be an IANA name such as Europe/Berlin')
     try:
         ZoneInfo(value)
-    except Exception as exc:
+    except ZoneInfoNotFoundError as exc:
+        try:
+            ZoneInfo('UTC')
+        except ZoneInfoNotFoundError:
+            raise ValueError('IANA timezone data is missing or incomplete; install your OS tzdata package or Python tzdata in the Hermes environment') from exc
+        raise ValueError(f'{value!r} is not an IANA timezone, or its timezone data is missing') from exc
+    except ValueError as exc:
         raise ValueError(f'{value!r} is not an IANA timezone ({exc})') from exc
     return value
 
