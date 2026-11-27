@@ -58,9 +58,9 @@ Hermes runs a pre-run script (`deploy/hermes/daily_journal.py`, a shim over this
 
 ## Hermes plugin (preview)
 
-`plugins/wake` is an independent regular Hermes plugin subdirectory, not a memory provider. It bundles the standalone package snapshot. Registration is inert. Setup can create a starter, store an existing Wake-style vault path in the current profile, and install missing profile skills without overwriting existing ones. Newly installed skills read the profile connection; preexisting skills remain untouched. The journal CLI passes the connected vault, but the existing publisher copies only into Git vaults and never syncs in this plugin.
+`plugins/wake` is an independent regular Hermes plugin subdirectory, not a memory provider. It bundles the standalone package snapshot. Registration is inert. Setup can create a starter, store an existing Wake-style vault path in the current profile, and install missing profile skills without overwriting existing ones. Newly installed skills read the profile connection; preexisting skills remain untouched. The journal CLI passes the connected vault, and the plugin publisher copies into explicitly selected Git or non-Git vaults and never syncs. It does not modify Hermes built-in memory.
 
-The explicitly invoked memory preview/apply workflow removes only byte-identical whole duplicate entries. Apply requires a snapshot digest, locks with Hermes's actual memory lock, rereads, verifies an exclusive backup, and uses the Hermes atomic writer. It refuses noncanonical files and unsupported locks. This uses private Hermes APIs and cooperative locking only; arbitrary editors must be stopped. It does not attempt model-generated semantic rewrites or automatic maintenance. Journal scheduling is not shipped: the manual agent workflow lacks enforced staging-only confinement, so putting it on cron would cross the model-write boundary. The plugin makes no claim of verified unattended operation.
+Journal scheduling is not shipped: the manual agent workflow lacks enforced staging-only confinement, so putting it on cron would cross the model-write boundary. The plugin makes no claim of verified unattended operation.
 
 ## State
 

@@ -1,87 +1,17 @@
 """Wake's opt-in, CLI-only Hermes integration. Registration is inert."""
 from pathlib import Path
 import os
-import hashlib
 import json
-import uuid
 import tempfile
 import subprocess
 import sys
-import errno
 
 ROOT = Path(__file__).resolve().parent
-
-
-def _sync_directory(path):
-    # Windows cannot open directories this way. Some filesystems do not support
-    # directory fsync; other failures must abort before replacing memory.
-    if os.name == 'nt':
-        return
-    fd = os.open(path, os.O_RDONLY | getattr(os, 'O_DIRECTORY', 0))
-    try:
-        try:
-            os.fsync(fd)
-        except OSError as exc:
-            if exc.errno not in (errno.EINVAL, errno.ENOTSUP):
-                raise
-    finally:
-        os.close(fd)
 
 
 def run_wake(*args):
     bootstrap = "import runpy, sys; sys.path.insert(0, sys.argv.pop(1)); runpy.run_module('wake', run_name='__main__')"
     return subprocess.call([sys.executable, '-I', '-c', bootstrap, str(ROOT / 'vendor'), *args])
-
-
-
-def _memory_snapshot(target):
-    from tools.memory_tool_store import MemoryStore, ENTRY_DELIMITER
-    if target not in ('memory', 'user'):
-        raise ValueError('target must be memory or user')
-    path = MemoryStore._path_for(target)
-    if path.is_symlink() or not path.is_file():
-        raise ValueError('memory file must be an existing regular non-symlink file')
-    raw = path.read_bytes()
-    text = raw.decode('utf-8')
-    entries = text.split(ENTRY_DELIMITER)
-    if any(not e or e != e.strip() for e in entries):
-        raise ValueError('noncanonical memory formatting; no changes made')
-    distinct = list(dict.fromkeys(entries))
-    return path, raw, distinct, len(entries) - len(distinct)
-
-
-def memory_preview(target):
-    path, raw, entries, duplicates = _memory_snapshot(target)
-    return {'path': str(path), 'sha256': hashlib.sha256(raw).hexdigest(),
-            'duplicates': duplicates}
-
-
-def memory_apply(target, expected_sha256):
-    from tools.memory_tool_store import MemoryStore
-    from tools import memory_tool
-    if memory_tool.fcntl is None and memory_tool.msvcrt is None:
-        raise RuntimeError('OS memory lock unavailable')
-    path = MemoryStore._path_for(target) if target in ('memory', 'user') else None
-    if path is None:
-        raise ValueError('target must be memory or user')
-    with MemoryStore._file_lock(path):
-        path, raw, entries, duplicates = _memory_snapshot(target)
-        if hashlib.sha256(raw).hexdigest() != expected_sha256:
-            raise ValueError('memory changed since preview; preview again')
-        if not duplicates:
-            return {'removed': 0, 'backup': None}
-        backup = path.with_name(path.name + '.wake-backup-' + uuid.uuid4().hex)
-        flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL
-        fd = os.open(backup, flags, 0o600)
-        with os.fdopen(fd, 'wb') as f:
-            f.write(raw)
-            f.flush()
-            os.fsync(f.fileno())
-        if backup.read_bytes() != raw:
-            raise OSError('backup verification failed; memory unchanged')
-        _sync_directory(path.parent)
-        MemoryStore._write_file(path, entries)
-        return {'removed': duplicates, 'backup': str(backup)}
 
 
 def connected_vault():
@@ -124,8 +54,6 @@ def setup():
     if input('Show manual Hermes journal setup? [y/N] ').strip().lower() == 'y':
         print('Run hermes wake journal prepare --no-sync, then follow the bundled journal guide. '
               'No job is created. See the plugin README for the complete manual workflow.')
-    if input('Would you like memory maintenance? [y/N] ').strip().lower() == 'y':
-        print('Use hermes wake memory preview memory (or user), then apply with --sha256 after review. Only exact duplicate entries can be removed; no schedule was created.')
     if input('Connect an existing Wake vault and optionally install skills? [y/N] ').strip().lower() == 'y':
         path = input('Existing vault path: ').strip()
         if path and input(f'Connect {path!r} to this profile? [y/N] ').strip().lower() == 'y':
@@ -161,10 +89,6 @@ def setup():
 def configure_parser(parser):
     sub = parser.add_subparsers(dest='wake_action', required=True)
     sub.add_parser('setup', help='Choose optional setup; defaults to no changes')
-    memory = sub.add_parser('memory', help='Review exact-duplicate memory entries')
-    memory.add_argument('action', choices=['preview', 'apply'])
-    memory.add_argument('target', choices=['memory', 'user'])
-    memory.add_argument('--sha256', help='Exact preview digest required to apply')
     journal = sub.add_parser('journal', help='Run a manual Hermes journal step')
     journal.add_argument('action', choices=['prepare', 'commit', 'status', 'evidence'])
     journal.add_argument('--day')
@@ -181,16 +105,6 @@ def command(args):
             return setup()
         except (EOFError, KeyboardInterrupt):
             print('\nSetup cancelled.')
-            return 1
-    if args.wake_action == 'memory':
-        try:
-            if args.action == 'apply' and not args.sha256:
-                raise ValueError('apply requires --sha256 from preview')
-            result = memory_preview(args.target) if args.action == 'preview' else memory_apply(args.target, args.sha256)
-            print(json.dumps(result, ensure_ascii=False))
-            return 0
-        except (ValueError, OSError, RuntimeError) as exc:
-            print(f'Memory maintenance stopped: {exc}', file=sys.stderr)
             return 1
     opts = []
     for key in ('day', 'timezone', 'db', 'journal', 'vault'):

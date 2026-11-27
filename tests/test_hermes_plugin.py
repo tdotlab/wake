@@ -25,13 +25,12 @@ class PluginTests(unittest.TestCase):
         self.assertTrue(tzdata[0].marker.evaluate({'sys_platform': 'win32'}))
         self.assertFalse(tzdata[0].marker.evaluate({'sys_platform': 'linux'}))
 
-    def test_memory_opt_in_fails_closed(self):
-        mod = load_plugin()
-        with tempfile.TemporaryDirectory() as tmp, patch.dict('os.environ', {'HOME': tmp, 'HERMES_HOME': tmp + '/profile'}):
-            with patch('builtins.input', side_effect=['', '', 'y', '']), contextlib.redirect_stdout(io.StringIO()) as output:
-                self.assertEqual(mod.setup(), 0)
-            self.assertIn('Only exact duplicate entries', output.getvalue())
-            self.assertEqual(list(Path(tmp).iterdir()), [])
+    def test_memory_command_is_not_exposed(self):
+        import argparse
+        parser = argparse.ArgumentParser()
+        load_plugin().configure_parser(parser)
+        with contextlib.redirect_stderr(io.StringIO()), self.assertRaises(SystemExit):
+            parser.parse_args(['memory', 'preview', 'memory'])
 
     def test_vault_creation_requires_second_confirmation(self):
         mod = load_plugin()
@@ -61,7 +60,7 @@ class PluginTests(unittest.TestCase):
     def test_setup_decline_everything_is_read_only(self):
         mod = load_plugin()
         with tempfile.TemporaryDirectory() as tmp, patch.dict('os.environ', {'HOME': tmp, 'HERMES_HOME': tmp + '/profile'}):
-            answers = iter(['', '', '', ''])
+            answers = iter(['', '', ''])
             prompts = []
             def reply(prompt):
                 prompts.append(prompt)
@@ -69,70 +68,7 @@ class PluginTests(unittest.TestCase):
             with patch('builtins.input', side_effect=reply), contextlib.redirect_stdout(io.StringIO()):
                 self.assertEqual(mod.setup(), 0)
             self.assertEqual(list(Path(tmp).iterdir()), [])
-            self.assertTrue(any('memory' in prompt.lower() for prompt in prompts))
-
-class MaintenanceTests(unittest.TestCase):
-    def test_backup_directory_is_synced_before_memory_replacement(self):
-        import os
-        import stat
-        mod = load_plugin()
-        with tempfile.TemporaryDirectory() as tmp, patch.dict('os.environ', {'HERMES_HOME': tmp}):
-            path = Path(tmp) / 'memories' / 'MEMORY.md'
-            path.parent.mkdir()
-            path.write_text('a\n§\na')
-            digest = mod.memory_preview('memory')['sha256']
-            syncs = []
-            original = os.fsync
-            def record(fd):
-                syncs.append(stat.S_ISDIR(os.fstat(fd).st_mode))
-                return original(fd)
-            with patch.object(mod.os, 'fsync', side_effect=record):
-                mod.memory_apply('memory', digest)
-            self.assertIn(True, syncs)
-
-    def test_reviewed_dedup_keeps_exact_entries_and_backup(self):
-        mod = load_plugin()
-        with tempfile.TemporaryDirectory() as tmp, patch.dict('os.environ', {'HERMES_HOME': tmp}):
-            memory = Path(tmp) / 'memories' / 'MEMORY.md'
-            memory.parent.mkdir()
-            original = 'first\n§\nsecond\n§\nfirst'
-            memory.write_text(original, encoding='utf-8')
-            preview = mod.memory_preview('memory')
-            self.assertEqual(preview['duplicates'], 1)
-            self.assertEqual(memory.read_text(), original)
-            result = mod.memory_apply('memory', preview['sha256'])
-            self.assertEqual(memory.read_text(), 'first\n§\nsecond')
-            self.assertEqual(Path(result['backup']).read_text(), original)
-
-    def test_apply_rejects_concurrent_change(self):
-        mod = load_plugin()
-        with tempfile.TemporaryDirectory() as tmp, patch.dict('os.environ', {'HERMES_HOME': tmp}):
-            path = Path(tmp) / 'memories' / 'USER.md'
-            path.parent.mkdir()
-            path.write_text('a\n§\na')
-            preview = mod.memory_preview('user')
-            path.write_text('a\n§\na\n§\nb')
-            with self.assertRaisesRegex(ValueError, 'changed'):
-                mod.memory_apply('user', preview['sha256'])
-            self.assertEqual(path.read_text(), 'a\n§\na\n§\nb')
-            self.assertEqual(list(path.parent.glob('*.wake-backup-*')), [])
-
-    def test_memory_cli_preview_and_explicit_apply(self):
-        import argparse
-        mod = load_plugin()
-        parser = argparse.ArgumentParser()
-        mod.configure_parser(parser)
-        with tempfile.TemporaryDirectory() as tmp, patch.dict('os.environ', {'HERMES_HOME': tmp}):
-            path = Path(tmp) / 'memories' / 'MEMORY.md'
-            path.parent.mkdir()
-            path.write_text('a\n§\na')
-            with contextlib.redirect_stdout(io.StringIO()) as out:
-                self.assertEqual(mod.command(parser.parse_args(['memory', 'preview', 'memory'])), 0)
-            digest = mod.memory_preview('memory')['sha256']
-            self.assertIn(digest, out.getvalue())
-            with contextlib.redirect_stdout(io.StringIO()):
-                self.assertEqual(mod.command(parser.parse_args(['memory', 'apply', 'memory', '--sha256', digest])), 0)
-            self.assertEqual(path.read_text(), 'a')
+            self.assertFalse(any('memory' in prompt.lower() for prompt in prompts))
 
 class ExistingVaultTests(unittest.TestCase):
     def test_setup_installs_only_three_skills_with_per_skill_fallback(self):
@@ -145,7 +81,7 @@ class ExistingVaultTests(unittest.TestCase):
             (vault / '_system/skills/brain/SKILL.md').write_text('custom brain')
             (vault / '_system/skills/unrelated').mkdir()
             (vault / '_system/skills/unrelated/SKILL.md').write_text('not authorized')
-            with patch('builtins.input', side_effect=['', '', '', 'y', str(vault), 'y', 'y']), contextlib.redirect_stdout(io.StringIO()):
+            with patch('builtins.input', side_effect=['', '', 'y', str(vault), 'y', 'y']), contextlib.redirect_stdout(io.StringIO()):
                 self.assertEqual(mod.setup(), 0)
             skills = Path(tmp) / 'profile/skills'
             self.assertEqual({p.name for p in skills.iterdir()}, {'brain', 'brain-ingest', 'brain-lint'})
@@ -163,7 +99,7 @@ class ExistingVaultTests(unittest.TestCase):
             dest = Path(tmp) / 'profile' / 'skills' / 'brain'
             dest.mkdir(parents=True)
             (dest / 'SKILL.md').write_text('do not replace')
-            with patch('builtins.input', side_effect=['', '', '', 'y', str(vault), 'y', 'y']), contextlib.redirect_stdout(io.StringIO()):
+            with patch('builtins.input', side_effect=['', '', 'y', str(vault), 'y', 'y']), contextlib.redirect_stdout(io.StringIO()):
                 self.assertEqual(mod.setup(), 0)
             self.assertEqual(mod.connected_vault(), str(vault))
             self.assertEqual((dest / 'SKILL.md').read_text(), 'do not replace')
@@ -185,19 +121,6 @@ class ExistingVaultTests(unittest.TestCase):
                 self.assertEqual(mod.command(parser.parse_args(['journal', 'status'])), 0)
             self.assertIn(str(vault), run.call_args.args)
 
-    def test_maintenance_fails_closed_without_os_lock_support(self):
-        import tools.memory_tool
-        mod = load_plugin()
-        with tempfile.TemporaryDirectory() as tmp, patch.dict('os.environ', {'HERMES_HOME': tmp}):
-            path = Path(tmp) / 'memories' / 'MEMORY.md'
-            path.parent.mkdir()
-            path.write_text('a\n§\na')
-            digest = mod.memory_preview('memory')['sha256']
-            with patch.object(tools.memory_tool, 'fcntl', None), patch.object(tools.memory_tool, 'msvcrt', None):
-                with self.assertRaisesRegex(RuntimeError, 'lock'):
-                    mod.memory_apply('memory', digest)
-            self.assertEqual(path.read_text(), 'a\n§\na')
-
     def test_installed_brain_skill_knows_connected_profile_vault(self):
         mod = load_plugin()
         with tempfile.TemporaryDirectory() as tmp, patch.dict('os.environ', {'HOME': tmp, 'HERMES_HOME': tmp + '/profile'}):
@@ -205,7 +128,7 @@ class ExistingVaultTests(unittest.TestCase):
             vault.mkdir()
             (vault / 'AGENTS.md').touch()
             (vault / 'hot.md').touch()
-            with patch('builtins.input', side_effect=['', '', '', 'y', str(vault), 'y', 'y']):
+            with patch('builtins.input', side_effect=['', '', 'y', str(vault), 'y', 'y']):
                 self.assertEqual(mod.setup(), 0)
             text = (Path(tmp) / 'profile/skills/brain/SKILL.md').read_text()
             self.assertIn('wake/config.json', text)
