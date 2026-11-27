@@ -8,7 +8,7 @@ On top of that sits the part that makes Wake more than a folder of notes: **nigh
 
 Both halves are optional. Use the vault alone, the journals alone, or both.
 
-A regular Hermes plugin preview lives in [`plugins/wake`](plugins/wake/README.md). It offers opt-in vault setup, profile skills, and manual journals without creating jobs. It does not modify Hermes built-in memory or provide unattended journaling. The standalone multi-agent Wake workflow below is unchanged.
+A regular Hermes plugin preview lives in [`plugins/wake`](plugins/wake/README.md). It offers opt-in vault setup, profile skills, manual journals, and a nightly journal job that setup creates by default with a one-key opt-out. It does not modify Hermes built-in memory. The standalone multi-agent Wake workflow below is unchanged.
 
 ## The starter vault
 

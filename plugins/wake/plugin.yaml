@@ -1,6 +1,6 @@
 name: wake
-version: 0.1.0
-description: "Opt-in Wake starter vault and manual Hermes journal"
+version: 0.2.0
+description: "Opt-in Wake starter vault, profile skills, and nightly Hermes journal"
 author: tdotlab
 kind: standalone
 requires_hermes: ">=0.22.2"

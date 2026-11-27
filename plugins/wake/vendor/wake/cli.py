@@ -79,7 +79,7 @@ Next:
   1. Open the folder in Obsidian ("Open folder as vault"). Start at Home.md.
   2. To connect this vault and optionally install skills, run hermes wake setup again.
   3. First chat: ask an agent to "read the brain, then interview me to fill in me/Profile.md".
-  4. See the plugin README for the optional manual journal workflow.""")
+  4. See the plugin README for setup, the optional nightly journal schedule, and the manual workflow.""")
 
 
 def install_skills_command(args):

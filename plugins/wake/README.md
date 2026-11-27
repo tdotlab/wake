@@ -12,24 +12,49 @@ hermes plugins enable --no-allow-tool-override wake
 hermes wake setup
 ```
 
-Replace `<FULL_COMMIT_SHA>` with the actual SHA, without angle brackets. Installation fetches the repository over the network; enabling may reconcile the Hermes dependency environment, including the Windows-only `tzdata` dependency. Check `hermes plugins list` and `hermes wake --help` after enabling. No schedule is created by installation, enablement, or setup.
+Replace `<FULL_COMMIT_SHA>` with the actual SHA, without angle brackets. Installation fetches the repository over the network; enabling may reconcile the Hermes dependency environment, including the Windows-only `tzdata` dependency. Check `hermes plugins list` and `hermes wake --help` after enabling. Installing or enabling creates no job; `hermes wake setup` offers the nightly job and records your answer.
 
-Every setup choice defaults to no. A new vault requires confirmation and no git commit is made. Separately, connect an existing Wake-style vault containing `AGENTS.md` and `hot.md`; this stores its absolute path in the current profile's `wake/config.json`. Journal commands use that path unless `--vault` is supplied. The vault is not modified by connection. Journal publishing copies only to an explicitly supplied or connected vault; no sync is performed.
+## Setup
 
-You may separately install missing brain, brain-ingest and brain-lint skills into the active profile; existing skills are never overwritten and other vault skills are not installed. Newly installed copies include instructions to read the profile connection. Existing skills are left unchanged and may need their own vault configuration (`WAKE_VAULT`/`BRAIN_VAULT`); the connection is not an environment variable or a global Hermes setting. Each of the three skills uses the vault copy when present, falling back individually to its bundled copy; review vault-provided skills and instructions for unsafe automatic sync before installation. The vault must provide `_system/scripts/brain.py` for workflows that invoke it; connecting does not scaffold or merge files. Setup creates no jobs.
+`hermes wake setup` asks about three independent things:
+
+1. **A new starter vault.** Off by default; creating one requires a second confirmation and makes no git commit.
+2. **An existing Wake-style vault** containing `AGENTS.md` and `hot.md`. Connecting stores its absolute path in the current profile's `wake/config.json` and does not modify the vault. Journal publishing copies only to that connected vault; nothing is git-synced. You may also install missing brain, brain-ingest and brain-lint skills into the active profile; existing skills are never overwritten and other vault skills are not installed. Each of the three skills uses the vault copy when present, falling back individually to its bundled copy. The vault must provide `_system/scripts/brain.py` for workflows that invoke it; connecting does not scaffold or merge files.
+3. **The nightly journal.** **On by default** (press Enter), with an explicit `n` to decline. Setup asks for:
+   - fire time, `HH:MM` 24-hour, default `00:30`;
+   - the IANA timezone that decides where a journal day ends, defaulted from `WAKE_TIMEZONE`, `TZ`, `/etc/timezone`, or the host zone;
+   - delivery, default `local`, or `origin`, `telegram`, `discord`, `signal`, `email`, or another `platform:target` accepted by Hermes cron.
+
+   Declining creates no job, script, or configuration change. Accepting writes one generated pre-run script to `$HERMES_HOME/scripts/wake_plugin_journal.py` and one enabled cron job named `Wake nightly journal` that attaches the read-only `wake:journal` skill. If a job created by this setup already exists, setup reports it and **leaves it unchanged unless you explicitly answer `y`** to updating its schedule and delivery; it never creates a duplicate. If any other file already occupies the generated script path with different content, setup refuses to overwrite it and creates no job.
+
+   The fire time follows Hermes's configured scheduler timezone (the clock `hermes cron` uses). The journal timezone only controls which completed calendar day the note covers; they may differ.
+
+Remove the job with `hermes wake unschedule` (it removes only the job named `Wake nightly journal` that also carries this setup's script or skill marker, and leaves other cron jobs alone) or `hermes cron remove <job-id>`. The generated script is left in place; delete it manually if nothing else uses it. **Remove the job before disabling or uninstalling the plugin**: a cron job outlives the plugin, and without the plugin the attached `wake:journal` skill is missing and the generated script may no longer find its vendored code.
+
+## Scheduled journal
+
+Hermes runs the pre-run script shortly after the configured time. The script:
+
+- opens `$HERMES_HOME/state.db` read-only and stages one completed day into `$HERMES_HOME/journal/.staging/<day>/`;
+- prints a JSON manifest (narrative parts, draft path, tool-evidence path, refs) when there is work;
+- prints `NO_JOURNAL_WORK` followed by `{"wakeAgent": false}` when there is nothing to journal. Hermes's wake gate skips the agent run entirely, so an empty day costs no model call.
+
+When there is work, the agent follows `wake:journal`: it reads the staged parts, writes only the manifest's `draft_path`, and runs the generated script's `commit` action. The commit step validates the draft's headings, citation refs, length and credential patterns, rebuilds `## Evidence` from the source, publishes the note, and copies it to the connected vault when one is set. A rejected draft is returned with the exact problems and can be fixed and retried in the same run. Any other failure leaves the day pending for the next run. The plugin never pushes the vault.
+
+**The write boundary is procedural, not an OS sandbox.** The pre-run and commit code do the staging, validation, Evidence and publishing; the skill tells the model to write only `draft_path` and never the journal, its state, or the vault. But the cron agent runs with your host permissions and a terminal, exactly like the standalone Hermes deployment in this repository. Do not run this in a profile you do not trust, and review the skill and generated script before enabling it.
+
+The job fires only while the Hermes cron scheduler is running (`hermes cron status`).
 
 ## Manual journal
 
-`hermes wake journal status` inspects the current profile's journal. `hermes wake journal prepare --day YYYY-MM-DD --timezone YOUR_IANA_ZONE` stages a day from `$HERMES_HOME/state.db` (the `--db` and `--journal` options can select other paths). A human can personally write the manifest's `draft_path` using the bundled `guides/journal.md`. Then `hermes wake journal commit --day YYYY-MM-DD --timezone YOUR_IANA_ZONE` validates, adds Evidence, and publishes. `--vault PATH` copies into `PATH/journal/hermes`, including non-Git vaults. Existing different notes are never overwritten or deleted; publication stops with the draft pending. If a vault copy succeeds but a later local write fails, the copy may remain and need manual review before retry. Pass the same `--db`, `--journal`, `--vault`, and `--timezone` on both steps. All plugin journal commands force `--no-sync`; they never push. Empty-day preparation still writes journal state; prepare and commit are explicit write operations. Do not run them without consent.
+A human can still run the workflow at a terminal. `hermes wake journal status` inspects the current profile's journal. `hermes wake journal prepare --day YYYY-MM-DD --timezone YOUR_IANA_ZONE` stages a day from `$HERMES_HOME/state.db` (the `--db` and `--journal` options can select other paths). Write the manifest's `draft_path` using the bundled `guides/journal.md`. Then `hermes wake journal commit --day YYYY-MM-DD --timezone YOUR_IANA_ZONE` validates, adds Evidence, and publishes. `--vault PATH` copies into `PATH/journal/hermes`, including non-Git vaults. Existing different notes are never overwritten or deleted; publication stops with the draft pending. If a vault copy succeeds but a later local write fails, the copy may remain and need manual review before retry. Pass the same `--db`, `--journal`, `--vault`, and `--timezone` on both steps. All plugin journal commands force `--no-sync`; they never push. Empty-day preparation still writes journal state; prepare and commit are explicit write operations. Do not run them without consent.
 
-**Important:** Model-authored journal flow is unavailable: the plugin provides no OS-enforced staging-only model sandbox. Do not use a terminal-enabled agent to draft or publish. The original Hermes skill uses an older deployment path and is not this plugin's guide. No automatic model run, scheduling, vault sync, or unattended operation is provided by this preview.
-
-## Scheduling limitation
-
-The plugin does not create journal schedules. The standalone deployment is separate, not installed by this plugin. No scheduled journal execution has been verified here.
+The bundled `guides/journal.md` remains the human-authored guide; the scheduled agent uses the registered `wake:journal` skill instead because its commit command is the generated profile script.
 
 ## Privacy
 
-Journal staging and notes contain personal conversation excerpts. Pattern redaction is not exhaustive; providers can see staged content if you send it to a model. Keep vaults private and review Evidence. See the root README and design for limitations.
+Journal staging and notes contain personal conversation excerpts. Pattern redaction is not exhaustive; the configured model provider can see staged content. Keep vaults private and review Evidence. See the root README and design for limitations.
 
-Plugin code and its subprocesses run with the invoking user's host permissions; Hermes plugin registration is not an OS sandbox. Install and run only in an environment you trust. This preview was tested against Hermes 0.22.2; compatibility with older versions has not been established.
+## Limitations
+
+Plugin code and its subprocesses, including the scheduled journal agent, run with the invoking user's host permissions; Hermes plugin registration is not an OS sandbox. The plugin makes no claim of enforced staging-only confinement. It never git-syncs the vault: run the vault's own sync separately if you want one. Setup and removal call Hermes's own cron store module (`cron.jobs`) rather than a public plugin API; a future Hermes release could move that seam. Scheduled execution was exercised against a disposable Hermes home (job creation, due firing, empty-day gate, commit and vault copy), not against a user's live profile; the model step depends on the profile's configured provider. This preview was tested against Hermes 0.22.2; compatibility with older versions has not been established.
