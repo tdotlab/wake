@@ -16,6 +16,18 @@ def load_plugin():
     return module
 
 class PluginTests(unittest.TestCase):
+    def test_vault_init_does_not_advertise_unsupported_plugin_scheduling(self):
+        import subprocess
+        import sys
+        with tempfile.TemporaryDirectory() as tmp:
+            vendor = PLUGIN / 'vendor'
+            result = subprocess.run(
+                [sys.executable, '-I', '-c',
+                 "import runpy, sys; sys.path.insert(0, sys.argv.pop(1)); runpy.run_module('wake', run_name='__main__')",
+                 str(vendor), 'init', str(Path(tmp) / 'vault'), '--no-git'],
+                text=True, capture_output=True, check=True)
+            self.assertNotIn('Optional nightly journals', result.stdout)
+
     def test_hermes_dependency_declaration_retains_windows_tzdata_marker(self):
         from pm.plugin_declarations import read_python_declaration
         from packaging.requirements import Requirement

@@ -2,7 +2,19 @@
 
 A regular Hermes CLI plugin, not a memory provider; it does not modify Hermes built-in memory. The standalone Wake CLI and its Claude Code integration remain independent. The plugin subdirectory includes a snapshot of Wake's Python package so a Hermes catalog subdirectory install does not depend on the parent checkout. The snapshot intentionally has plugin-specific safety differences from `src/wake`; reconcile them explicitly when updating it rather than blindly copying the standalone package.
 
-Install the `plugins/wake` subdirectory using Hermes's plugin installer; enable it separately. Run `hermes wake setup`. Every choice defaults to no. A new vault requires confirmation and no git commit is made. Separately, connect an existing Wake-style vault containing `AGENTS.md` and `hot.md`; this stores its absolute path in the current profile's `wake/config.json`. Journal commands use that path unless `--vault` is supplied. The vault is not modified by connection. Journal publishing copies only to an explicitly supplied or connected vault; no sync is performed.
+## Install the preview
+
+This is not yet a catalog listing. Select and inspect a **full 40-character commit SHA** from the `hermes-plugin-preview` branch, then use it in the commands below. Without `--ref`, the installer uses the repository's default branch, which may not contain this plugin. Quote the identifier so the shell does not treat `#` as a comment.
+
+```sh
+hermes plugins install --no-deps --no-enable --ref <FULL_COMMIT_SHA> 'tdotlab/wake#plugins/wake'
+hermes plugins enable --no-allow-tool-override wake
+hermes wake setup
+```
+
+Replace `<FULL_COMMIT_SHA>` with the actual SHA, without angle brackets. Installation fetches the repository over the network; enabling may reconcile the Hermes dependency environment, including the Windows-only `tzdata` dependency. Check `hermes plugins list` and `hermes wake --help` after enabling. No schedule is created by installation, enablement, or setup.
+
+Every setup choice defaults to no. A new vault requires confirmation and no git commit is made. Separately, connect an existing Wake-style vault containing `AGENTS.md` and `hot.md`; this stores its absolute path in the current profile's `wake/config.json`. Journal commands use that path unless `--vault` is supplied. The vault is not modified by connection. Journal publishing copies only to an explicitly supplied or connected vault; no sync is performed.
 
 You may separately install missing brain, brain-ingest and brain-lint skills into the active profile; existing skills are never overwritten and other vault skills are not installed. Newly installed copies include instructions to read the profile connection. Existing skills are left unchanged and may need their own vault configuration (`WAKE_VAULT`/`BRAIN_VAULT`); the connection is not an environment variable or a global Hermes setting. Each of the three skills uses the vault copy when present, falling back individually to its bundled copy; review vault-provided skills and instructions for unsafe automatic sync before installation. The vault must provide `_system/scripts/brain.py` for workflows that invoke it; connecting does not scaffold or merge files. Setup creates no jobs.
 

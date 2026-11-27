@@ -60,6 +60,8 @@ Hermes runs a pre-run script (`deploy/hermes/daily_journal.py`, a shim over this
 
 `plugins/wake` is an independent regular Hermes plugin subdirectory, not a memory provider. It bundles the standalone package snapshot. Registration is inert. Setup can create a starter, store an existing Wake-style vault path in the current profile, and install missing profile skills without overwriting existing ones. Newly installed skills read the profile connection; preexisting skills remain untouched. The journal CLI passes the connected vault, and the plugin publisher copies into explicitly selected Git or non-Git vaults and never syncs. It does not modify Hermes built-in memory.
 
+The preview installer must use the `plugins/wake` subdirectory and an explicit full commit SHA: the default branch may not contain the plugin. The bundled CLI's post-init guidance points back to plugin setup and the manual workflow, not standalone scheduling or a separately installed `wake` executable.
+
 Journal scheduling is not shipped: the manual agent workflow lacks enforced staging-only confinement, so putting it on cron would cross the model-write boundary. The plugin makes no claim of verified unattended operation.
 
 ## State

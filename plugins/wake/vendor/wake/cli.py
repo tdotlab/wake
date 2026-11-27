@@ -74,16 +74,12 @@ def init_command(args):
     print(f"Vault ready at {result['path']}: {len(result['created'])} files written"
           + (f", {len(result['skipped'])} already there and left alone" if result['skipped'] else '')
           + f". {result['git']}.")
-    setting = (f'setx WAKE_VAULT "{result["path"]}"   (new shells only)' if os.name == 'nt'
-               else f'export WAKE_VAULT="{result["path"]}"   (put it in your shell profile)')
     print(f"""
 Next:
   1. Open the folder in Obsidian ("Open folder as vault"). Start at Home.md.
-  2. Point your tools at it:   {setting}
-  3. Give your agents the skills:   wake install-skills --claude --hermes
-     Codex and others: tell them to read {result['path']}/AGENTS.md first.
-  4. First chat: ask an agent to "read the brain, then interview me to fill in me/Profile.md".
-  5. Optional nightly journals: see the Scheduling section of the README.""")
+  2. To connect this vault and optionally install skills, run hermes wake setup again.
+  3. First chat: ask an agent to "read the brain, then interview me to fill in me/Profile.md".
+  4. See the plugin README for the optional manual journal workflow.""")
 
 
 def install_skills_command(args):
