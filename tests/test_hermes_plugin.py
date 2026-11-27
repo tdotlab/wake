@@ -16,6 +16,15 @@ def load_plugin():
     return module
 
 class PluginTests(unittest.TestCase):
+    def test_hermes_dependency_declaration_retains_windows_tzdata_marker(self):
+        from pm.plugin_declarations import read_python_declaration
+        from packaging.requirements import Requirement
+        declarations = read_python_declaration(PLUGIN).requirements
+        tzdata = [Requirement(item) for item in declarations if Requirement(item).name == 'tzdata']
+        self.assertEqual(len(tzdata), 1)
+        self.assertTrue(tzdata[0].marker.evaluate({'sys_platform': 'win32'}))
+        self.assertFalse(tzdata[0].marker.evaluate({'sys_platform': 'linux'}))
+
     def test_memory_opt_in_fails_closed(self):
         mod = load_plugin()
         with tempfile.TemporaryDirectory() as tmp, patch.dict('os.environ', {'HOME': tmp, 'HERMES_HOME': tmp + '/profile'}):
@@ -63,6 +72,24 @@ class PluginTests(unittest.TestCase):
             self.assertTrue(any('memory' in prompt.lower() for prompt in prompts))
 
 class MaintenanceTests(unittest.TestCase):
+    def test_backup_directory_is_synced_before_memory_replacement(self):
+        import os
+        import stat
+        mod = load_plugin()
+        with tempfile.TemporaryDirectory() as tmp, patch.dict('os.environ', {'HERMES_HOME': tmp}):
+            path = Path(tmp) / 'memories' / 'MEMORY.md'
+            path.parent.mkdir()
+            path.write_text('a\n§\na')
+            digest = mod.memory_preview('memory')['sha256']
+            syncs = []
+            original = os.fsync
+            def record(fd):
+                syncs.append(stat.S_ISDIR(os.fstat(fd).st_mode))
+                return original(fd)
+            with patch.object(mod.os, 'fsync', side_effect=record):
+                mod.memory_apply('memory', digest)
+            self.assertIn(True, syncs)
+
     def test_reviewed_dedup_keeps_exact_entries_and_backup(self):
         mod = load_plugin()
         with tempfile.TemporaryDirectory() as tmp, patch.dict('os.environ', {'HERMES_HOME': tmp}):
@@ -108,6 +135,24 @@ class MaintenanceTests(unittest.TestCase):
             self.assertEqual(path.read_text(), 'a')
 
 class ExistingVaultTests(unittest.TestCase):
+    def test_setup_installs_only_three_skills_with_per_skill_fallback(self):
+        mod = load_plugin()
+        with tempfile.TemporaryDirectory() as tmp, patch.dict('os.environ', {'HOME': tmp, 'HERMES_HOME': tmp + '/profile'}):
+            vault = Path(tmp) / 'vault'
+            (vault / '_system/skills/brain').mkdir(parents=True)
+            (vault / 'AGENTS.md').touch()
+            (vault / 'hot.md').touch()
+            (vault / '_system/skills/brain/SKILL.md').write_text('custom brain')
+            (vault / '_system/skills/unrelated').mkdir()
+            (vault / '_system/skills/unrelated/SKILL.md').write_text('not authorized')
+            with patch('builtins.input', side_effect=['', '', '', 'y', str(vault), 'y', 'y']), contextlib.redirect_stdout(io.StringIO()):
+                self.assertEqual(mod.setup(), 0)
+            skills = Path(tmp) / 'profile/skills'
+            self.assertEqual({p.name for p in skills.iterdir()}, {'brain', 'brain-ingest', 'brain-lint'})
+            self.assertIn('custom brain', (skills / 'brain/SKILL.md').read_text())
+            for name in ('brain', 'brain-ingest', 'brain-lint'):
+                self.assertIn('wake/config.json', (skills / name / 'SKILL.md').read_text())
+
     def test_connect_existing_vault_and_install_skills_without_overwrite(self):
         mod = load_plugin()
         with tempfile.TemporaryDirectory() as tmp, patch.dict('os.environ', {'HOME': tmp, 'HERMES_HOME': tmp + '/profile'}):

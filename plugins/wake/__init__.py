@@ -7,8 +7,25 @@ import uuid
 import tempfile
 import subprocess
 import sys
+import errno
 
 ROOT = Path(__file__).resolve().parent
+
+
+def _sync_directory(path):
+    # Windows cannot open directories this way. Some filesystems do not support
+    # directory fsync; other failures must abort before replacing memory.
+    if os.name == 'nt':
+        return
+    fd = os.open(path, os.O_RDONLY | getattr(os, 'O_DIRECTORY', 0))
+    try:
+        try:
+            os.fsync(fd)
+        except OSError as exc:
+            if exc.errno not in (errno.EINVAL, errno.ENOTSUP):
+                raise
+    finally:
+        os.close(fd)
 
 
 def run_wake(*args):
@@ -62,6 +79,7 @@ def memory_apply(target, expected_sha256):
             os.fsync(f.fileno())
         if backup.read_bytes() != raw:
             raise OSError('backup verification failed; memory unchanged')
+        _sync_directory(path.parent)
         MemoryStore._write_file(path, entries)
         return {'removed': duplicates, 'backup': str(backup)}
 
@@ -122,7 +140,8 @@ def setup():
                 skills = get_hermes_home() / 'skills'
                 names = ('brain', 'brain-ingest', 'brain-lint')
                 missing = [name for name in names if not (skills / name).exists()]
-                status = run_wake('install-skills', '--hermes', '--vault', vault)
+                status = run_wake('install-skills', '--hermes', '--vault', vault,
+                                  *(arg for name in names for arg in ('--skill', name)))
                 if status:
                     return status
                 for name in missing:

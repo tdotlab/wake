@@ -99,14 +99,20 @@ def skills_source(vault=None):
     return local if local.is_dir() else STARTER / '_system' / 'skills'
 
 
-def install_skills(destinations, vault=None, owner=None, force=False, today=None):
+def install_skills(destinations, vault=None, owner=None, force=False, today=None, selected=None):
     """Copy each skill folder into every destination. Returns (installed, skipped) path lists."""
     source = skills_source(vault)
     owner = (owner or '').strip() or DEFAULT_OWNER
     today = today or date.today().isoformat()
     installed, skipped = [], []
     for destination in destinations:
-        for skill in sorted(p for p in source.iterdir() if p.is_dir()):
+        if selected is None:
+            sources = sorted(p for p in source.iterdir() if p.is_dir())
+        else:
+            bundled = STARTER / '_system' / 'skills'
+            sources = [source / name if (source / name / 'SKILL.md').is_file() else bundled / name
+                       for name in selected]
+        for skill in sources:
             out = Path(destination).expanduser() / skill.name
             if out.exists() and not force:
                 skipped.append(str(out))

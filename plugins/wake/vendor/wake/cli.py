@@ -91,7 +91,7 @@ def install_skills_command(args):
     destinations = scaffold.agent_skill_dirs(args.claude, args.hermes) + [Path(d) for d in args.dir or []]
     if not destinations:
         raise ValueError('say where: --claude, --hermes or --dir FOLDER')
-    installed, skipped = scaffold.install_skills(destinations, vault=args.vault, owner=args.owner, force=args.force)
+    installed, skipped = scaffold.install_skills(destinations, vault=args.vault, owner=args.owner, force=args.force, selected=args.skill)
     for path in installed:
         print(f'installed {path}')
     for path in skipped:
@@ -120,6 +120,7 @@ def main(argv=None):
     s.add_argument('--vault', help='take the skills from this vault (default: the one WAKE_VAULT points at)')
     s.add_argument('--owner', help='used only when installing the packaged copy')
     s.add_argument('--force', action='store_true', help='replace skills that are already installed')
+    s.add_argument('--skill', action='append', choices=['brain', 'brain-ingest', 'brain-lint'], help='install only this skill (repeatable; fallback per skill)')
     j = sub.add_parser('journal')
     j.add_argument('agent', choices=['hermes', 'claude-code'])
     j.add_argument('action', nargs='?', default='prepare', choices=['prepare', 'commit', 'status', 'evidence'])
