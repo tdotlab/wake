@@ -1,0 +1,11 @@
+# Obsidian per-device state. Plugins stay per-device (some keep API keys in their data.json).
+.obsidian/plugins/
+.obsidian/workspace*.json
+.obsidian/cache
+.trash/
+
+# OS and tool junk
+.DS_Store
+Thumbs.db
+__pycache__/
+*.pyc

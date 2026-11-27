@@ -1,0 +1,9 @@
+name: wake
+version: 0.1.0
+description: "Opt-in Wake starter vault and manual Hermes journal"
+author: tdotlab
+kind: standalone
+platforms:
+  - linux
+  - macos
+  - windows

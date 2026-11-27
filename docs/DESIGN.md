@@ -56,6 +56,10 @@ Caps adapt to the day's size: prose and call lines shrink in steps until the nar
 
 Hermes runs a pre-run script (`deploy/hermes/daily_journal.py`, a shim over this package). With nothing to do it prints a gate line and Hermes skips the agent run entirely. Otherwise it prints a manifest for one completed day, and the agent follows `skills/hermes-daily-journal/SKILL.md`: read the staged parts, write the draft, run `commit`. The agent gets a terminal, so the skill spells out what it must not do, and the transcripts are treated as evidence, never instructions.
 
+## Hermes plugin (preview)
+
+`plugins/wake` is an independent regular Hermes plugin subdirectory, not a memory provider. It bundles a snapshot of the standalone package, so a subdirectory install does not need the checkout. Keep the snapshot in sync with `src/wake`. Registration only exposes `hermes wake`; it does not install skills, configure the profile, or create jobs. An interactive setup offers an explicitly confirmed starter vault, manual journal instructions, and a memory-maintenance question. Memory maintenance fails closed and is not implemented. Journal steps invoke the existing validator and publisher with sync disabled; there is no unattended run or enforced model sandbox. The bundled guide explains the manual workflow. Catalog validation and isolated tests do not establish production safety or scheduled execution.
+
 ## State
 
 - A working folder per agent (`~/.hermes/journal`, `~/.wake/claude-code-journal`) holds `.state.json` (per-day fingerprints and the list of empty days), `.meta/` (per-day manifests), `.revisions/` (replaced notes) and the published notes. Staging is deleted after each commit.

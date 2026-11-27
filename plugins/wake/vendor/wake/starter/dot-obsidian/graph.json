@@ -1,0 +1,26 @@
+{
+  "collapse-filter": false,
+  "search": "-path:raw -path:_system -path:daily -path:journal -path:inbox -file:index.md -file:log.md -file:hot.md -file:Home.md -file:README.md -file:AGENTS.md -file:CLAUDE.md",
+  "showTags": false,
+  "showAttachments": false,
+  "hideUnresolved": false,
+  "showOrphans": true,
+  "collapse-color-groups": false,
+  "colorGroups": [
+    { "query": "path:me", "color": { "a": 1, "rgb": 14701138 } },
+    { "query": "path:projects", "color": { "a": 1, "rgb": 15246141 } },
+    { "query": "path:people", "color": { "a": 1, "rgb": 14120960 } },
+    { "query": "path:wiki/entities", "color": { "a": 1, "rgb": 5020392 } },
+    { "query": "path:wiki/concepts", "color": { "a": 1, "rgb": 6142819 } },
+    { "query": "path:wiki/answers", "color": { "a": 1, "rgb": 10513621 } },
+    { "query": "path:wiki/sources", "color": { "a": 1, "rgb": 10132122 } }
+  ],
+  "showArrow": true,
+  "textFadeMultiplier": -0.7,
+  "nodeSizeMultiplier": 1.5,
+  "lineSizeMultiplier": 1.5,
+  "centerStrength": 0.5,
+  "repelStrength": 12,
+  "linkStrength": 1,
+  "linkDistance": 220
+}

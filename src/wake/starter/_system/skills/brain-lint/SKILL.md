@@ -11,7 +11,7 @@ metadata:
 
 # Brain lint
 
-The vault rules are in `<vault>/AGENTS.md`.
+The vault rules are in the vault root’s `AGENTS.md`.
 
 ## 1. Mechanical checks
 

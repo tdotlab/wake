@@ -11,7 +11,7 @@ metadata:
 
 # Brain ingest
 
-The vault rules are in `<vault>/AGENTS.md`. How to find the vault is in the `brain` skill: `$WAKE_VAULT`, else `$BRAIN_VAULT`, else `~/vault`.
+The vault rules are in the vault root’s `AGENTS.md`. How to find the vault is in the `brain` skill: `$WAKE_VAULT`, else `$BRAIN_VAULT`, else `~/vault`.
 
 Ingest one source at a time. Each source may touch 5 to 15 notes, which is the point.
 
